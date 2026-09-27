@@ -195,11 +195,15 @@
   opacity: 0;
   transform: translateY(10px);
   pointer-events: none;
-  transition: opacity 0.25s ease, transform 0.25s ease, background 0.15s ease;
+  transition: opacity 0.25s ease, transform 0.25s ease, background 0.15s ease,
+    right 0.25s ease, bottom 0.25s ease;
 }
 .vp__skip-btn svg { width: 18px; height: 18px; fill: currentColor; }
 .vp__skip-btn.vp--visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
 .vp__skip-btn:hover { background: rgba(34, 40, 54, 0.78); }
+
+/* 오버레이가 숨겨진 동안엔 플레이어 우측 하단으로 이동 */
+.vp--idle .vp__skip-btn { bottom: 12px; }
 
 /* ---------------- 컨트롤 패널 ---------------- */
 
@@ -481,9 +485,12 @@
 .vp--touch .vp__skip-btn {
   right: 56px;   /* 컨트롤 여백 8 + 전체화면 40 + 간격 8 */
   bottom: 44px;  /* 버튼 행 세로 중앙 정렬 */
+  z-index: 6;    /* 투명한 컨트롤 래퍼(z-5)가 터치를 가로채지 못하게 위로 */
   padding: 9px 14px;
   font-size: 13px;
 }
+/* 오버레이가 숨겨진 동안엔 우측 하단 모서리로 이동 */
+.vp--touch.vp--idle .vp__skip-btn { right: 10px; bottom: 10px; }
 
 /* ============================================================
    모바일 compact 모드 — 플레이어가 작게 표시될 때 UI 전체 축소
@@ -519,6 +526,8 @@
   gap: 4px;
 }
 .vp--touch.vp--compact .vp__skip-btn svg { width: 14px; height: 14px; }
+/* compact + 오버레이 숨김: 우측 하단 모서리로 이동 */
+.vp--touch.vp--compact.vp--idle .vp__skip-btn { right: 8px; bottom: 8px; }
 
 .vp--touch.vp--compact .vp__ripple { width: 88px; height: 88px; margin-top: -44px; margin-left: -44px; }
 .vp--touch.vp--compact .vp__seek-flash { font-size: 12px; padding: 6px 12px; }
