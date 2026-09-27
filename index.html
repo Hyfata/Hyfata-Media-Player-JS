@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>JS Video Player 테스트</title>
+<link rel="stylesheet" href="video-player.css" />
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #0d1220 0%, #1a1030 45%, #0d1b2e 100%);
+    background-attachment: fixed;
+    color: #eef1f6;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+      "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+    padding: 32px 16px 64px;
+  }
+  .page { max-width: 960px; margin: 0 auto; }
+  header { margin-bottom: 28px; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  .sub { margin: 0; opacity: 0.65; font-size: 14px; }
+  .card {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 18px;
+    padding: 18px;
+    margin-bottom: 26px;
+  }
+  .card h2 { font-size: 16px; margin: 0 0 4px; }
+  .card .desc { font-size: 13px; opacity: 0.65; margin: 0 0 14px; line-height: 1.6; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; opacity: 0.85; margin-top: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
+  .dot.opening { background: rgba(53, 208, 255, 0.7); }
+  .dot.ending { background: rgba(255, 122, 184, 0.7); }
+  table.keys { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.keys td { padding: 8px 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+  table.keys td:first-child { width: 160px; font-weight: 600; white-space: nowrap; }
+  kbd {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 6px;
+    padding: 1px 7px;
+    font-family: inherit;
+    font-size: 12px;
+  }
+  .note { font-size: 12.5px; opacity: 0.55; line-height: 1.7; margin-top: 8px; }
+  code { background: rgba(255,255,255,.1); padding: 1px 6px; border-radius: 6px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>JS Video Player 테스트</h1>
+    <p class="sub">오프닝/엔딩 스킵 · 재생바 구간 표시 · 키보드/더블탭 탐색 · 글래스모피즘 UI</p>
+  </header>
+
+  <section class="card">
+    <h2>테스트 1 — 챕터명: Opening / Ending Credits</h2>
+    <p class="desc"><code>dummy1.mp4</code>(2분, 챕터 내장) + <code>sample-chapters.vtt</code>. 내장 챕터를 읽는 브라우저는 내장 챕터가, 아니면 VTT가 사용됩니다. 재생바에서 오프닝·엔딩 구간 색상과 스킵 버튼을 확인하세요.</p>
+    <div id="player1"></div>
+    <div class="legend">
+      <span><i class="dot opening"></i>오프닝 구간</span>
+      <span><i class="dot ending"></i>엔딩 구간</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>테스트 2 — 챕터명: Intro / Credits</h2>
+    <p class="desc"><code>dummy2.mp4</code>(1분 30초) + <code>sample-chapters2.vtt</code>. opening/ending 외에 intro/credits 명명도 인식되는지 확인합니다.</p>
+    <div id="player2"></div>
+  </section>
+
+  <section class="card">
+    <h2>테스트 3 — 챕터 없음</h2>
+    <p class="desc"><code>dummy3.mp4</code>(1분), 챕터 미지정. 오프닝/엔딩이 없는 영상에서는 스킵 버튼과 구간 표시가 나타나지 않아야 합니다.</p>
+    <div id="player3"></div>
+  </section>
+
+  <section class="card">
+    <h2>조작 방법</h2>
+    <table class="keys">
+      <tr><td><kbd>Space</kbd> / <kbd>K</kbd></td><td>재생 · 일시정지</td></tr>
+      <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>5초 뒤로 / 앞으로</td></tr>
+      <tr><td><kbd>J</kbd> / <kbd>L</kbd></td><td>10초 뒤로 / 앞으로</td></tr>
+      <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>볼륨 조절</td></tr>
+      <tr><td><kbd>M</kbd></td><td>음소거</td></tr>
+      <tr><td><kbd>F</kbd></td><td>전체화면</td></tr>
+      <tr><td><kbd>0</kbd>–<kbd>9</kbd></td><td>영상의 0%–90% 지점으로 이동</td></tr>
+      <tr><td>모바일</td><td>좌/우 더블탭: 10초 뒤로/앞으로 · 한 번 탭: 컨트롤 표시/숨김</td></tr>
+    </table>
+    <p class="note">
+      키보드 조작은 플레이어를 한 번 클릭(포커스)한 후 동작합니다.
+      모바일 UI는 실제 기기에서 <code>http://(서버IP)/video_player_test/</code>로 접속하거나,
+      데스크톱 브라우저 개발자도구의 기기 툴바(터치 에뮬레이션)로 확인할 수 있습니다.
+    </p>
+  </section>
+</div>
+
+<script src="video-player.js"></script>
+<script>
+  new VideoPlayer('#player1', {
+    src: 'dummy1.mp4',
+    title: '더미 영상 1 — 2분 (챕터 내장)',
+    chaptersUrl: 'sample-chapters.vtt'
+  });
+
+  new VideoPlayer('#player2', {
+    src: 'dummy2.mp4',
+    title: '더미 영상 2 — 1분 30초',
+    chaptersUrl: 'sample-chapters2.vtt'
+  });
+
+  new VideoPlayer('#player3', {
+    src: 'dummy3.mp4',
+    title: '더미 영상 3 — 1분 (챕터 없음)'
+  });
+</script>
+</body>
+</html>

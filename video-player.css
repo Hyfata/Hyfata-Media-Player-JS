@@ -1,0 +1,430 @@
+/* ============================================================
+   VideoPlayer — 글래스모피즘 비디오 플레이어 스타일
+   - 투명 + 블러(backdrop-filter) 기반
+   - 데스크톱(.vp--desktop) / 모바일(.vp--touch) 분리 최적화
+   ============================================================ */
+
+.vp {
+  --vp-accent: #4d9fff;
+  --vp-opening: rgba(53, 208, 255, 0.55);  /* 오프닝 구간: 시안 */
+  --vp-ending: rgba(255, 122, 184, 0.55);  /* 엔딩 구간: 핑크 */
+  --vp-glass: rgba(16, 20, 28, 0.42);
+  --vp-glass-strong: rgba(14, 17, 24, 0.62);
+  --vp-border: rgba(255, 255, 255, 0.14);
+  --vp-text: #f4f6f8;
+
+  position: relative;
+  width: 100%;
+  background: #000;
+  overflow: hidden;
+  border-radius: 16px;
+  color: var(--vp-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+  line-height: 1.4;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.vp * { box-sizing: border-box; margin: 0; padding: 0; }
+
+.vp:focus { outline: none; }
+.vp:focus-visible { outline: 2px solid var(--vp-accent); outline-offset: -2px; }
+
+.vp__video {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: #000;
+}
+
+/* 전체화면 */
+.vp:fullscreen { border-radius: 0; }
+.vp:fullscreen .vp__video { height: 100%; object-fit: contain; }
+.vp:-webkit-full-screen { border-radius: 0; }
+.vp:-webkit-full-screen .vp__video { height: 100%; object-fit: contain; }
+
+.vp--idle .vp__video { cursor: none; }
+
+/* ---------------- 탭 레이어 (터치 탐색 영역) ---------------- */
+
+.vp__tap-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+}
+.vp__tap-zone { position: relative; flex: 1; overflow: hidden; }
+.vp--idle .vp__tap-layer { cursor: none; }
+
+/* 더블탭 리플 */
+.vp__ripple {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 124px;
+  height: 124px;
+  margin-top: -62px;
+  margin-left: -62px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  animation: vp-ripple 0.55s ease-out forwards;
+}
+.vp__ripple-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+@keyframes vp-ripple {
+  0%   { transform: scale(0.4); opacity: 0; }
+  25%  { opacity: 1; }
+  100% { transform: scale(1.15); opacity: 0; }
+}
+
+/* ---------------- 중앙 재생 버튼 / 로딩 / 플래시 ---------------- */
+
+.vp__center-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 1px solid var(--vp-border);
+  background: var(--vp-glass);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.9);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.vp__center-play svg { width: 32px; height: 32px; fill: currentColor; margin-left: 4px; }
+.vp--paused .vp__center-play {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
+}
+.vp__center-play:hover { background: rgba(30, 36, 48, 0.55); }
+
+.vp__spinner {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: none;
+  place-items: center;
+  pointer-events: none;
+}
+.vp--loading .vp__spinner { display: grid; }
+.vp__spinner-ring {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  animation: vp-spin 0.8s linear infinite;
+}
+@keyframes vp-spin { to { transform: rotate(360deg); } }
+
+.vp__seek-flash {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  transform: translate(-50%, -50%);
+  background: var(--vp-glass-strong);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--vp-border);
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 700;
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.vp__seek-flash.vp--show { animation: vp-flash 0.6s ease forwards; }
+@keyframes vp-flash {
+  0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+  20%  { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.05); }
+}
+
+/* ---------------- 제목 ---------------- */
+
+.vp__title {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 4;
+  background: var(--vp-glass);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid var(--vp-border);
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: opacity 0.25s ease;
+}
+.vp--idle .vp__title { opacity: 0; }
+
+/* ---------------- 스킵 버튼 ---------------- */
+
+.vp__skip-btn {
+  position: absolute;
+  right: 12px;
+  bottom: 96px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--vp-glass-strong);
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  border: 1px solid var(--vp-border);
+  border-radius: 999px;
+  color: #fff;
+  padding: 10px 16px;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease, background 0.15s ease;
+}
+.vp__skip-btn svg { width: 18px; height: 18px; fill: currentColor; }
+.vp__skip-btn.vp--visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.vp__skip-btn:hover { background: rgba(34, 40, 54, 0.78); }
+
+/* ---------------- 컨트롤 패널 ---------------- */
+
+.vp__controls {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 5;
+  background: var(--vp-glass);
+  backdrop-filter: blur(18px) saturate(1.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  border: 1px solid var(--vp-border);
+  border-radius: 14px;
+  padding: 10px 12px 8px;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.vp--idle .vp__controls {
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+}
+
+/* ---------------- 재생바 ---------------- */
+
+.vp__progress {
+  position: relative;
+  height: 18px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.vp__progress-track,
+.vp__progress-buffered,
+.vp__progress-played,
+.vp__progress-segments {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  height: 4px;
+  border-radius: 999px;
+  transition: height 0.15s ease;
+}
+.vp__progress-track    { width: 100%; background: rgba(255, 255, 255, 0.22); }
+.vp__progress-buffered { width: 0;    background: rgba(255, 255, 255, 0.28); }
+.vp__progress-played   { width: 0;    background: var(--vp-accent); }
+.vp__progress-segments { width: 100%; background: transparent; overflow: hidden; }
+
+/* 오프닝/엔딩 구간 (재생바 위에 항상 보이도록 최상단 레이어) */
+.vp__segment { position: absolute; top: 0; bottom: 0; }
+.vp__segment--opening { background: var(--vp-opening); }
+.vp__segment--ending  { background: var(--vp-ending); }
+
+/* 챕터 경계 눈금 */
+.vp__tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.vp__progress-handle {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  transform: translate(-50%, -50%) scale(0.85);
+  transition: transform 0.12s ease;
+  pointer-events: none;
+}
+.vp--desktop .vp__progress:hover .vp__progress-handle,
+.vp--dragging .vp__progress-handle { transform: translate(-50%, -50%) scale(1.15); }
+
+.vp--desktop .vp__progress:hover .vp__progress-track,
+.vp--desktop .vp__progress:hover .vp__progress-buffered,
+.vp--desktop .vp__progress:hover .vp__progress-played,
+.vp--desktop .vp__progress:hover .vp__progress-segments,
+.vp--dragging .vp__progress-track,
+.vp--dragging .vp__progress-buffered,
+.vp--dragging .vp__progress-played,
+.vp--dragging .vp__progress-segments { height: 6px; }
+
+/* 재생바 툴팁 (시간 · 챕터명) */
+.vp__progress-tooltip {
+  position: absolute;
+  bottom: 24px;
+  left: 0;
+  transform: translateX(-50%);
+  background: var(--vp-glass-strong);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--vp-border);
+  border-radius: 8px;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+  z-index: 6;
+}
+.vp--desktop .vp__progress:hover .vp__progress-tooltip,
+.vp--dragging .vp__progress-tooltip { opacity: 1; }
+.vp--touch .vp__progress-tooltip { display: none; }
+.vp--touch.vp--dragging .vp__progress-tooltip { display: block; opacity: 1; }
+
+/* ---------------- 컨트롤 버튼 행 ---------------- */
+
+.vp__row { display: flex; align-items: center; gap: 4px; }
+
+.vp__btn {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.vp__btn:hover { background: rgba(255, 255, 255, 0.14); }
+.vp__btn:active { transform: scale(0.92); }
+.vp__btn svg { width: 21px; height: 21px; fill: currentColor; }
+
+.vp__time {
+  display: flex;
+  gap: 5px;
+  margin: 0 8px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.95;
+  white-space: nowrap;
+}
+.vp__time-sep { opacity: 0.5; }
+
+.vp__spacer { flex: 1; }
+
+.vp__volume { display: flex; align-items: center; }
+.vp__volume-slider {
+  width: 74px;
+  accent-color: #fff;
+  cursor: pointer;
+}
+
+/* ---------------- 에러 표시 ---------------- */
+
+.vp__error {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: none;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.65);
+  padding: 24px;
+  text-align: center;
+  font-size: 14px;
+}
+
+/* ============================================================
+   모바일(터치) 최적화 — 큰 터치 영역, 볼륨 슬라이더 제거
+   ============================================================ */
+
+.vp--touch .vp__btn { width: 44px; height: 44px; }
+.vp--touch .vp__btn svg { width: 23px; height: 23px; }
+.vp--touch .vp__volume-slider { display: none; }
+
+.vp--touch .vp__controls {
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  padding: 12px 14px 10px;
+  border-radius: 16px;
+}
+.vp--touch .vp__progress { height: 24px; }
+.vp--touch .vp__progress-track,
+.vp--touch .vp__progress-buffered,
+.vp--touch .vp__progress-played,
+.vp--touch .vp__progress-segments { height: 5px; }
+.vp--touch .vp__progress-handle { width: 14px; height: 14px; }
+.vp--touch .vp__time { font-size: 13px; }
+.vp--touch .vp__center-play { width: 80px; height: 80px; }
+.vp--touch .vp__center-play svg { width: 36px; height: 36px; }
+.vp--touch .vp__skip-btn {
+  bottom: 112px;
+  padding: 12px 18px;
+  font-size: 14px;
+}
+
+/* ============================================================
+   데스크톱 전용 미세 조정
+   ============================================================ */
+
+.vp--desktop .vp__btn--rewind,
+.vp--desktop .vp__btn--forward { opacity: 0.92; }
+
+@media (max-width: 480px) {
+  .vp { border-radius: 12px; }
+  .vp__title { font-size: 12px; padding: 5px 10px; }
+  .vp__time { font-size: 11.5px; margin: 0 4px; }
+}
