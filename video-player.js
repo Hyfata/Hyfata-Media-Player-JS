@@ -130,7 +130,8 @@
       preload: 'metadata',
       seekStep: 10,
       keyboardSeek: 5,
-      hideDelay: 2600
+      hideDelay: 2600,
+      skipButtonDuration: 4000
     }, options);
     this.options.labels = Object.assign({}, DEFAULT_LABELS, options.labels || {});
 
@@ -142,6 +143,8 @@
     this.chaptersSource = null;
     this._sections = [];
     this._skipTarget = null;
+    this._skipSegment = null;
+    this._skipTimer = null;
     this._dragging = false;
     this._hoveringControls = false;
     this._focusInControls = false;
@@ -154,8 +157,25 @@
     this._build(containerEl);
     this._bind();
     this._initChapters();
+
+    // 플레이어 크기에 따라 compact 모드 전환 (작을 때 UI 축소)
+    if (typeof ResizeObserver !== 'undefined') {
+      var self = this;
+      this._ro = new ResizeObserver(function () { self._updateSizeClass(); });
+      this._ro.observe(this.container);
+      this._updateSizeClass();
+    }
+
     this._poke();
   }
+
+  /** 플레이어가 작으면 vp--compact 클래스 부여 (UI 크기 축소용) */
+  VideoPlayer.prototype._updateSizeClass = function () {
+    var w = this.container.clientWidth;
+    var h = this.container.clientHeight;
+    this.container.classList.toggle('vp--compact', w < 540 || (h > 0 && h < 230));
+    this._updateProgressUI();
+  };
 
   VideoPlayer.parseVTT = parseVTT;
   VideoPlayer.classifyChapter = classifyChapter;
@@ -243,6 +263,7 @@
       playBtn: q('.vp__btn--play'),
       rewindBtn: q('.vp__btn--rewind'),
       forwardBtn: q('.vp__btn--forward'),
+      volume: q('.vp__volume'),
       volumeBtn: q('.vp__btn--volume'),
       volumeSlider: q('.vp__volume-slider'),
       fsBtn: q('.vp__btn--fullscreen'),
@@ -255,6 +276,9 @@
     if (!fsSupported) this.refs.fsBtn.style.display = 'none';
 
     this.refs.volumeSlider.value = video.muted ? 0 : video.volume;
+
+    // 모바일: 음소거 버튼을 컨트롤 패널 밖(플레이어 우측 상단)으로 이동
+    if (this.isTouch) container.appendChild(this.refs.volume);
   };
 
   /* ---------- 이벤트 바인딩 ---------- */
@@ -278,6 +302,8 @@
       c.classList.remove('vp--paused');
       r.playBtn.innerHTML = ICONS.pause;
       r.playBtn.setAttribute('aria-label', L.pause);
+      r.centerPlay.innerHTML = ICONS.pause;
+      r.centerPlay.setAttribute('aria-label', L.pause);
       self._poke();
     });
     function onPause() {
@@ -285,6 +311,10 @@
       c.classList.remove('vp--playing');
       r.playBtn.innerHTML = ICONS.play;
       r.playBtn.setAttribute('aria-label', L.play);
+      r.centerPlay.innerHTML = ICONS.play;
+      r.centerPlay.setAttribute('aria-label', L.play);
+      // 일시정지 중엔 오버레이가 항상 보이므로 스킵 버튼도 유지
+      if (self._skipSegment) self._showSkipButton();
       c.classList.remove('vp--idle');
       clearTimeout(self._hideTimer);
     }
@@ -490,22 +520,24 @@
     this._updateBuffer();
   };
 
-  /** 시간 → 재생바 x좌표(px) */
+  /** 시간 → 재생바 x좌표(px, .vp__progress 기준) */
   VideoPlayer.prototype._timeToX = function (t) {
     var secs = this._sections;
+    var base = this.refs.sectionsWrap.offsetLeft; // 모바일 박스 안쪽 여백
     for (var i = 0; i < secs.length; i++) {
       var s = secs[i];
       if (t <= s.end || i === secs.length - 1) {
-        return s.el.offsetLeft + clamp((t - s.start) / s.dur, 0, 1) * s.el.offsetWidth;
+        return base + s.el.offsetLeft + clamp((t - s.start) / s.dur, 0, 1) * s.el.offsetWidth;
       }
     }
     return 0;
   };
 
-  /** 재생바 x좌표(px) → 시간 (끊긴 갭 위는 다음 조각 시작으로) */
+  /** 재생바 x좌표(px, .vp__progress 기준) → 시간 (끊긴 갭 위는 다음 조각 시작으로) */
   VideoPlayer.prototype._xToTime = function (x) {
     var secs = this._sections;
     if (!secs.length) return 0;
+    x -= this.refs.sectionsWrap.offsetLeft; // 모바일 박스 안쪽 여백 보정
     for (var i = 0; i < secs.length; i++) {
       var s = secs[i];
       var left = s.el.offsetLeft;
@@ -547,15 +579,34 @@
       var c = this.chapters[i];
       if (c.type !== 'normal' && t >= c.start && t < c.end) { seg = c; break; }
     }
+    if (seg === this._skipSegment) return;
+    this._skipSegment = seg;
     if (seg) {
       this._skipTarget = seg.end;
       this.refs.skipLabel.textContent =
         seg.type === 'opening' ? this.options.labels.skipOpening : this.options.labels.skipEnding;
-      this.refs.skipBtn.classList.add('vp--visible');
+      this._showSkipButton();
     } else {
       this._skipTarget = null;
-      this.refs.skipBtn.classList.remove('vp--visible');
+      this._hideSkipButton();
     }
+  };
+
+  /** 스킵 버튼 표시 + 자동 숨김 타이머 (일시정지 중엔 타이머 없이 유지) */
+  VideoPlayer.prototype._showSkipButton = function () {
+    var self = this;
+    clearTimeout(this._skipTimer);
+    this.refs.skipBtn.classList.add('vp--visible');
+    if (!this.video.paused) {
+      this._skipTimer = setTimeout(function () {
+        self.refs.skipBtn.classList.remove('vp--visible');
+      }, this.options.skipButtonDuration);
+    }
+  };
+
+  VideoPlayer.prototype._hideSkipButton = function () {
+    clearTimeout(this._skipTimer);
+    this.refs.skipBtn.classList.remove('vp--visible');
   };
 
   /** 스킵 버튼 클릭 → 현재 오프닝/엔딩 구간 끝으로 */
@@ -563,7 +614,8 @@
     if (this._skipTarget == null) return;
     this.video.currentTime = this._skipTarget + 0.05;
     this._skipTarget = null;
-    this.refs.skipBtn.classList.remove('vp--visible');
+    this._skipSegment = null;
+    this._hideSkipButton();
     this._flash('건너뛰기');
   };
 
@@ -683,7 +735,7 @@
     var zone = side === 'left' ? this.refs.zoneL : this.refs.zoneR;
     var ripple = document.createElement('div');
     ripple.className = 'vp__ripple';
-    ripple.innerHTML = '<span class="vp__ripple-count">' + acc.count + '초</span>';
+    ripple.innerHTML = '<span class="vp__ripple-count">' + (side === 'left' ? '-' : '+') + acc.count + '초</span>';
     zone.appendChild(ripple);
     ripple.addEventListener('animationend', function () { ripple.remove(); });
     this._poke();
@@ -702,6 +754,8 @@
   VideoPlayer.prototype._poke = function (delay) {
     var self = this;
     this.container.classList.remove('vp--idle');
+    // 오프닝/엔딩 구간이면 스킵 버튼도 다시 표시 (타이머 리셋)
+    if (this._skipSegment) this._showSkipButton();
     clearTimeout(this._hideTimer);
     this._hideTimer = setTimeout(function () {
       if (!self.video.paused && !self.video.ended && !self._dragging &&
@@ -787,6 +841,8 @@
     this._listeners = [];
     clearTimeout(this._hideTimer);
     clearTimeout(this._singleTapTimer);
+    clearTimeout(this._skipTimer);
+    if (this._ro) this._ro.disconnect();
     if (this._wrapped) {
       var parent = this.container.parentNode;
       if (parent) {
