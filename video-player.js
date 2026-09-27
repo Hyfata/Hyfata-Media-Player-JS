@@ -196,7 +196,10 @@
       autoplay: false,
       muted: false,
       loop: false,
-      preload: 'metadata',
+      // 'auto' like video.js: fetch first frames up front so a poster frame
+      // shows before play and metadata/seek targets exist on iOS, where
+      // nothing is fetched until data flows. Use 'metadata'/'none' to save data.
+      preload: 'auto',
       seekStep: 10,
       keyboardSeek: 5,
       hideDelay: 2600,
@@ -224,9 +227,14 @@
     this._menuOpen = false;
     this._ctxOpen = false;
     this._aboutOpen = false;
-    // Seek requested before metadata arrived (iOS often has none until
-    // first play). Applied on loadedmetadata/canplay, then confirmed.
+    // Finger position while scrubbing (handle paints this until timeupdate
+    // takes over again on release)
+    this._scrubTime = null;
+    // Seek requested before frame data arrived (iOS often has none until
+    // first play). Applied on loadedmetadata/loadeddata/canplay, then confirmed.
     this._pendingSeek = null;
+    this._ownLoad = false;
+    this._kickSrc = null;
 
     // Restore saved settings (localStorage)
     this._rate = 1;
@@ -268,7 +276,7 @@
   VideoPlayer.classifyChapter = classifyChapter;
   VideoPlayer.formatTime = formatTime;
   VideoPlayer.LANGS = LANGS;
-  VideoPlayer.VERSION = '1.0.0';
+  VideoPlayer.VERSION = '1.0.1';
   VideoPlayer.BRAND = 'Hyfata';
   VideoPlayer.NAME = 'Hyfata Media Player';
 
@@ -492,6 +500,7 @@
     function onMeta() {
       r.timeDur.textContent = formatTime(v.duration);
       self._renderSections();
+      self._ownLoad = false; // fetch survived past 'emptied' — safety reset
       self._applyPendingSeek();
     }
     this._on(v, 'loadedmetadata', onMeta);
@@ -499,7 +508,11 @@
     // iOS may drop the first currentTime set right after metadata:
     // re-apply on canplay if the seek never landed.
     this._on(v, 'canplay', function () { self._applyPendingSeek(); });
-    this._on(v, 'seeked', function () { self._confirmPendingSeek(); });
+    // First frame present — the safest moment to land a queued seek on iOS
+    this._on(v, 'loadeddata', function () { self._applyPendingSeek(); });
+    // Chain a newer target that arrived mid-seek (coalesced scrub):
+    // apply first (no-op if it already landed), then confirm.
+    this._on(v, 'seeked', function () { self._applyPendingSeek(); self._confirmPendingSeek(); });
     this._on(v, 'progress', function () { self._updateBuffer(); });
     this._on(global, 'resize', function () { self._updateProgressUI(); });
 
@@ -525,6 +538,23 @@
       }
       self._errorEl.textContent = tmpl(L.loadError, { detail: v.error.message || 'code ' + v.error.code });
       self._errorEl.style.display = 'grid';
+    });
+
+    // Source swapped (or load() reset the element): drop everything tied
+    // to the old media, or a queued seek/skip target leaks into the new video.
+    // Our own _kickLoad() also fires 'emptied' (possibly coalesced with a
+    // real swap's), so attribute by URL: same source → keep the queued seek,
+    // different source → genuine swap, wipe everything.
+    this._on(v, 'emptied', function () {
+      var cur = v.currentSrc || v.getAttribute('src');
+      if (self._ownLoad && cur === self._kickSrc) { self._ownLoad = false; return; }
+      self._ownLoad = false;
+      self._kickSrc = null;
+      self._clearPendingSeek();
+      self._skipTarget = null;
+      self._skipSegment = null;
+      self._hideSkipButton();
+      self._renderSections(); // clears stale pieces (no duration yet)
     });
 
     /* Control buttons */
@@ -667,6 +697,7 @@
       self._dragging = false;
       c.classList.remove('vp--dragging');
       self._seekFromEvent(e);
+      self._scrubTime = null; // back to real playhead from here
       self._poke();
     }
     this._on(r.progress, 'pointerup', endDrag);
@@ -797,10 +828,10 @@
     return secs[secs.length - 1].end;
   };
 
-  /** Update each piece's fill and the handle position for the current time */
-  VideoPlayer.prototype._updateProgressUI = function () {
+  /** Update each piece's fill and the handle position (t = preview position, if given) */
+  VideoPlayer.prototype._updateProgressUI = function (t) {
     var v = this.video;
-    var t = v.currentTime;
+    if (t == null) t = v.currentTime;
     var d = v.duration;
     this._sections.forEach(function (s) {
       s.playedEl.style.width = clamp((t - s.start) / s.dur, 0, 1) * 100 + '%';
@@ -826,9 +857,11 @@
       var c = this.chapters[i];
       if (c.type !== 'normal' && t >= c.start && t < c.end) { seg = c; break; }
     }
-    // Auto-skip: jump immediately on entering a segment (no button shown)
+    // Auto-skip: jump immediately on entering a segment (no button shown).
+    // Routed through seekTo for the frame-data guards + queue (touch) and
+    // in-flight coalescing — a raw currentTime write here wedges iOS too.
     if (seg && this._autoSkip) {
-      this.video.currentTime = seg.end + 0.05;
+      this.seekTo(seg.end + 0.05);
       this._flash(seg.type === 'opening' ? this.options.labels.skipOpening : this.options.labels.skipEnding);
       seg = null;
     }
@@ -867,7 +900,9 @@
   /** Skip button click → jump to the end of the current opening/ending segment */
   VideoPlayer.prototype.skipSegment = function () {
     if (this._skipTarget == null) return;
-    this.video.currentTime = this._skipTarget + 0.05;
+    // Same guards as any other seek: raw currentTime writes pre-data
+    // wedge iOS, so go through seekTo (queues/coalesces when needed).
+    this.seekTo(this._skipTarget + 0.05);
     this._skipTarget = null;
     this._skipSegment = null;
     this._hideSkipButton();
@@ -875,33 +910,86 @@
   };
 
   /**
-   * Apply a seek queued before metadata arrived. Safe to call any time:
-   * no-ops when there is nothing queued, no metadata yet, or the seek
+   * Kick off the metadata fetch when no fetch is in flight (needs a gesture
+   * on iOS). Flips preload 'none' → 'auto' first, since load() alone
+   * fetches nothing under 'none'. Never call mid-fetch (LOADING): aborting
+   * it can wedge iOS in endless buffering.
+   */
+  VideoPlayer.prototype._kickLoad = function () {
+    var v = this.video;
+    if (v.networkState === 2 || this._ownLoad) return; // fetch (or our kick) already in flight
+    if (v.preload === 'none') v.preload = 'auto';
+    this._ownLoad = true;
+    this._kickSrc = v.currentSrc || v.getAttribute('src');
+    try { v.load(); } catch (e) { this._ownLoad = false; this._kickSrc = null; }
+  };
+
+  /**
+   * Apply a seek queued before frame data arrived. Safe to call any time:
+   * no-ops when there is nothing queued, thresholds unmet, or the seek
    * already landed. Stale entries expire after 15 s so a dropped iOS
-   * seek can never cause a surprise jump later.
+   * seek can never cause a surprise jump later (or a retry loop).
+   * Touch needs HAVE_CURRENT_DATA (2): seeking on metadata-only wedges
+   * iOS in "seeking". Desktop applies at metadata (1).
    */
   VideoPlayer.prototype._applyPendingSeek = function () {
     if (!this._pendingSeek) return;
-    if (Date.now() - this._pendingSeek.at > 15000) { this._pendingSeek = null; return; }
+    if (Date.now() - this._pendingSeek.at > 15000) { this._clearPendingSeek(); return; }
     var v = this.video;
-    if (v.readyState < 1 || !isFinite(v.duration) || v.duration <= 0) return;
+    var need = this.isTouch ? 2 : 1;
+    if (v.readyState < need || !isFinite(v.duration) || v.duration <= 0) return;
+    if (v.seeking) return; // in flight — 'seeked'/timeupdate will chain the latest target
     var target = clamp(this._pendingSeek.t, 0, Math.max(0, v.duration - 0.05));
-    if (Math.abs(v.currentTime - target) < 0.3) { this._pendingSeek = null; return; }
+    if (Math.abs(v.currentTime - target) < 0.3) { this._clearPendingSeek(); return; }
+    this._pendingSeek.n = (this._pendingSeek.n || 0) + 1;
     v.currentTime = target;
   };
 
   /** Drop the queued seek once the playhead confirms it landed (or it expired) */
   VideoPlayer.prototype._confirmPendingSeek = function () {
     if (!this._pendingSeek) return;
-    if (Math.abs(this.video.currentTime - this._pendingSeek.t) < 0.5) this._pendingSeek = null;
-    else if (Date.now() - this._pendingSeek.at > 15000) this._pendingSeek = null;
+    var v = this.video;
+    if (Math.abs(v.currentTime - this._pendingSeek.t) < 0.5) { this._clearPendingSeek(); return; }
+    if (Date.now() - this._pendingSeek.at > 15000) { this._clearPendingSeek(); return; }
+    // Not landed and nothing in flight (e.g. a lost 'seeked' event):
+    // re-drive, capped so an unseekable target can't hot-loop.
+    if (!v.seeking && (this._pendingSeek.n || 0) < 4) this._applyPendingSeek();
+  };
+
+  VideoPlayer.prototype._clearPendingSeek = function () {
+    this._pendingSeek = null;
+    this._ownLoad = false;
+    this._kickSrc = null;
+    clearTimeout(this._seekWatchdog);
+  };
+
+  /**
+   * Watchdog for silently dropped writes (iOS occasionally swallows a seek —
+   * e.g. backward from ended — with no events at all, so neither 'seeked'
+   * nor timeupdate can confirm it). Re-drives until it lands or expires.
+   */
+  VideoPlayer.prototype._armSeekWatchdog = function () {
+    var self = this;
+    clearTimeout(this._seekWatchdog);
+    this._seekWatchdog = setTimeout(function () {
+      if (!self._pendingSeek) return;
+      if (Date.now() - self._pendingSeek.at > 15000) { self._clearPendingSeek(); return; }
+      var v = self.video;
+      if (!v.seeking && Math.abs(v.currentTime - self._pendingSeek.t) >= 0.5 &&
+          (self._pendingSeek.n || 0) < 4) {
+        self._applyPendingSeek();
+      }
+      self._armSeekWatchdog(); // keep watching until confirmed or expired
+    }, 1200);
   };
 
   /* ---------- Playback state ---------- */
 
   VideoPlayer.prototype._onTimeUpdate = function () {
     this.refs.timeCur.textContent = formatTime(this.video.currentTime);
-    this._updateProgressUI();
+    // While dragging, keep painting the finger position: timeupdate carries
+    // landed (stale) positions that would snap the handle back mid-scrub.
+    this._updateProgressUI(this._dragging ? this._scrubTime : undefined);
     this._updateBuffer();
     this._updateSkipButton();
     this._confirmPendingSeek();
@@ -931,8 +1019,16 @@
     var x = clamp(e.clientX - rect.left, 0, rect.width);
     var d = this.video.duration;
     if (!isFinite(d) || d <= 0) return;
-    this.video.currentTime = this._xToTime(x);
-    this._updateProgressUI();
+    var t = this._xToTime(x);
+    // Route through seekTo for the metadata/readyState guards + queue
+    this.seekTo(t);
+    // Paint the finger position immediately. Relying on timeupdate alone
+    // makes the handle snap back between landing seeks (visible stutter,
+    // worse when scrubbing backward where seeks land irregularly).
+    if (this._sections.length) {
+      this._scrubTime = t;
+      this._updateProgressUI(t);
+    }
   };
 
   VideoPlayer.prototype._updateTooltip = function (e) {
@@ -1203,32 +1299,50 @@
 
   VideoPlayer.prototype.seekTo = function (sec) {
     var v = this.video;
-    if (v.readyState < 1 || !isFinite(v.duration) || v.duration <= 0) {
+    // Touch needs frame data (readyState >= 2) before any currentTime write;
+    // metadata-only seeks wedge iOS in "seeking". Desktop applies at metadata.
+    var need = this.isTouch ? 2 : 1;
+    if (v.readyState < need || !isFinite(v.duration) || v.duration <= 0) {
       // No metadata yet (typical on iOS before first play): touching
       // currentTime now would be dropped or wedge the element in
       // "seeking" forever. Queue it and jump once metadata arrives.
       this._pendingSeek = { t: Math.max(0, sec), at: Date.now() };
-      // Kick off the metadata fetch only if nothing started yet (needs a
-      // gesture on iOS). Never call load() mid-fetch: it aborts the fetch
-      // and can wedge iOS in endless buffering.
-      if (v.networkState === 0) { try { v.load(); } catch (e) {} }
+      this._kickLoad();
       return;
     }
-    this._pendingSeek = null;
-    v.currentTime = clamp(sec, 0, Math.max(0, v.duration - 0.05));
+    var target = clamp(sec, 0, Math.max(0, v.duration - 0.05));
+    if (v.seeking) {
+      // A seek is already in flight: keep only the latest target.
+      // Overlapping currentTime writes wedge iOS; 'seeked' chains this.
+      this._pendingSeek = { t: target, at: Date.now() };
+      return;
+    }
+    // Keep the target until seeked/timeupdate proves it landed: iOS
+    // sometimes drops the write silently (e.g. backward seek from ended)
+    // with no events at all. The watchdog re-drives it.
+    this._pendingSeek = { t: target, at: Date.now() };
+    v.currentTime = target;
+    this._armSeekWatchdog();
   };
 
   VideoPlayer.prototype.seekBy = function (sec, silent) {
     var v = this.video;
-    if (v.readyState < 1 || !isFinite(v.duration) || v.duration <= 0) {
+    var need = this.isTouch ? 2 : 1;
+    if (v.readyState < need || !isFinite(v.duration) || v.duration <= 0) {
       var base = this._pendingSeek ? this._pendingSeek.t : (isFinite(v.currentTime) ? v.currentTime : 0);
       this._pendingSeek = { t: Math.max(0, base + sec), at: Date.now() };
-      if (v.networkState === 0) { try { v.load(); } catch (e) {} }
+      this._kickLoad();
       return;
     }
-    this._pendingSeek = null;
-    v.currentTime = clamp(v.currentTime + sec, 0, Math.max(0, v.duration - 0.05));
+    // Chain onto the in-flight target so rapid relative seeks accumulate
+    // instead of overlapping (all relative to the last landed position).
+    var base = (v.seeking && this._pendingSeek) ? this._pendingSeek.t : v.currentTime;
+    var target = clamp(base + sec, 0, Math.max(0, v.duration - 0.05));
     if (!silent) this._flash(this._txt('seekFlash', { sign: sec > 0 ? '+' : '', sec: sec }));
+    if (v.seeking) { this._pendingSeek = { t: target, at: Date.now() }; return; }
+    this._pendingSeek = { t: target, at: Date.now() };
+    v.currentTime = target;
+    this._armSeekWatchdog();
   };
 
   VideoPlayer.prototype.toggleMute = function () {
@@ -1271,6 +1385,7 @@
     clearTimeout(this._hideTimer);
     clearTimeout(this._singleTapTimer);
     clearTimeout(this._skipTimer);
+    clearTimeout(this._seekWatchdog);
     if (this._ro) this._ro.disconnect();
     // Remove the settings menu/backdrop moved to body on mobile
     [this.refs.menu, this.refs.backdrop].forEach(function (elm) {

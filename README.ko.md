@@ -52,7 +52,7 @@
 | `autoplay`           | boolean  | `false`      | 자동재생 (브라우저 정책상 음소거로 시작)          |
 | `muted`              | boolean  | `false`      | 음소거로 시작                                     |
 | `loop`               | boolean  | `false`      | 반복 재생                                         |
-| `preload`            | string   | `'metadata'` | 영상 preload 모드                                 |
+| `preload`            | string   | `'auto'`         | 영상 preload 모드 (`'auto'`면 재생 전부터 프레임이 보이고 재생 전 탐색 가능, video.js와 동일) |
 | `seekStep`           | number   | `10`         | 더블탭/버튼 탐색 단위 (초)                        |
 | `keyboardSeek`       | number   | `5`          | 방향키 탐색 단위 (초)                             |
 | `hideDelay`          | number   | `2600`       | 오버레이 자동 숨김까지 시간 (ms)                  |

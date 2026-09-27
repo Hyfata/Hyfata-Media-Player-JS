@@ -58,7 +58,7 @@ Open `index.html` for a live demo (English UI, Korean UI, and no-chapter cases).
 | `autoplay`           | boolean  | `false`      | Autoplay (starts muted, per browser policy)                      |
 | `muted`              | boolean  | `false`      | Start muted                                                      |
 | `loop`               | boolean  | `false`      | Loop playback                                                    |
-| `preload`            | string   | `'metadata'` | Video preload mode                                               |
+| `preload`            | string   | `'auto'`         | Video preload mode (`'auto'` shows a frame before play and enables pre-play seek, like video.js) |
 | `seekStep`           | number   | `10`         | Double-tap / button seek step (seconds)                          |
 | `keyboardSeek`       | number   | `5`          | Arrow-key seek step (seconds)                                    |
 | `hideDelay`          | number   | `2600`       | ms until the overlay auto-hides                                  |
