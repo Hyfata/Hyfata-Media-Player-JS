@@ -135,6 +135,11 @@
       autoSkip: 'Auto-skip opening/ending',
       showSkip: 'Show skip button',
       skipped: 'Skipped',
+      about: 'About',
+      close: 'Close',
+      version: 'Version',
+      brand: 'Brand',
+      license: 'License',
       volume: 'Volume',
       seekPosition: 'Seek position',
       seekFlash: '{sign}{sec}s',
@@ -158,6 +163,11 @@
       autoSkip: '오프닝/엔딩 자동 스킵',
       showSkip: '스킵 버튼 표시',
       skipped: '건너뛰기',
+      about: '정보',
+      close: '닫기',
+      version: '버전',
+      brand: '브랜드',
+      license: '라이선스',
       volume: '볼륨',
       seekPosition: '재생 위치',
       seekFlash: '{sign}{sec}초',
@@ -212,6 +222,8 @@
     this._lastTap = { time: 0, side: null };
     this._tapAcc = { left: { last: 0, count: 0 }, right: { last: 0, count: 0 } };
     this._menuOpen = false;
+    this._ctxOpen = false;
+    this._aboutOpen = false;
 
     // Restore saved settings (localStorage)
     this._rate = 1;
@@ -253,6 +265,9 @@
   VideoPlayer.classifyChapter = classifyChapter;
   VideoPlayer.formatTime = formatTime;
   VideoPlayer.LANGS = LANGS;
+  VideoPlayer.VERSION = '1.0.0';
+  VideoPlayer.BRAND = 'Hyfata';
+  VideoPlayer.NAME = 'Hyfata Media Player';
 
   /**
    * Register a language pack. Missing keys fall back to English.
@@ -349,6 +364,19 @@
           '<span>' + L.showSkip + '</span>' +
           '<button type="button" class="vp__switch vp__switch--show-skip" role="switch" aria-checked="true" aria-label="' + L.showSkip + '"><span class="vp__switch-knob"></span></button>' +
         '</div>' +
+      '</div>' +
+      '<div class="vp__context" role="menu">' +
+        '<button type="button" class="vp__ctx-item vp__ctx-settings">' + L.settings + '</button>' +
+        '<button type="button" class="vp__ctx-item vp__ctx-about">' + L.about + '</button>' +
+      '</div>' +
+      '<div class="vp__about" role="dialog" aria-label="' + L.about + '">' +
+        '<div class="vp__about-card">' +
+          '<div class="vp__about-title">' + VideoPlayer.NAME + '</div>' +
+          '<div class="vp__about-row"><span>' + L.version + '</span><span>' + VideoPlayer.VERSION + '</span></div>' +
+          '<div class="vp__about-row"><span>' + L.brand + '</span><span>' + VideoPlayer.BRAND + '</span></div>' +
+          '<div class="vp__about-row"><span>' + L.license + '</span><span>MIT</span></div>' +
+          '<button type="button" class="vp__about-close">' + L.close + '</button>' +
+        '</div>' +
       '</div>'
     );
 
@@ -379,6 +407,11 @@
       menu: q('.vp__menu'),
       autoSkipSwitch: q('.vp__switch--auto-skip'),
       showSkipSwitch: q('.vp__switch--show-skip'),
+      ctx: q('.vp__context'),
+      ctxSettings: q('.vp__ctx-settings'),
+      ctxAbout: q('.vp__ctx-about'),
+      about: q('.vp__about'),
+      aboutClose: q('.vp__about-close'),
       timeCur: q('.vp__time-current'),
       timeDur: q('.vp__time-duration')
     };
@@ -511,7 +544,23 @@
     });
     this._on(r.autoSkipSwitch, 'click', function () { self._setAutoSkip(!self._autoSkip); });
     this._on(r.showSkipSwitch, 'click', function () { self._setShowSkip(!self._showSkip); });
-    this._on(document, 'click', function () { self._closeMenu(); });
+    this._on(document, 'click', function (e) {
+      self._closeMenu();
+      self._closeContext();
+      // Close the about dialog on outside click (inside clicks are contained)
+      if (self._aboutOpen && !r.about.contains(e.target)) self._closeAbout();
+    });
+
+    /* Desktop right-click menu: Settings / About (mobile keeps native long-press) */
+    this._on(c, 'contextmenu', function (e) {
+      if (self.isTouch) return;
+      e.preventDefault();
+      self._openContext(e);
+    });
+    this._on(r.ctxSettings, 'click', function (e) { e.stopPropagation(); self._closeContext(); self._openMenu(); });
+    this._on(r.ctxAbout, 'click', function (e) { e.stopPropagation(); self._closeContext(); self._openAbout(); });
+    this._on(r.aboutClose, 'click', function (e) { e.stopPropagation(); self._closeAbout(); });
+    this._on(r.about, 'click', function (e) { if (e.target === r.about) self._closeAbout(); });
 
     /* Mobile bottom sheet: tap backdrop to close + drag down to close */
     if (this.isTouch && r.backdrop) {
@@ -877,7 +926,10 @@
     var handled = true;
     switch (e.key) {
       case 'Escape':
-        if (this._menuOpen) this._closeMenu(); else handled = false;
+        if (this._aboutOpen) this._closeAbout();
+        else if (this._ctxOpen) this._closeContext();
+        else if (this._menuOpen) this._closeMenu();
+        else handled = false;
         break;
       case ' ': case 'k': case 'K': this.togglePlay(); break;
       case 'ArrowLeft': this.seekBy(-o.keyboardSeek); break;
@@ -961,6 +1013,45 @@
       this.container.classList.add('vp--idle');
       this._closeMenu();
     }
+  };
+
+  /* ---------- Context menu & about dialog (desktop) ---------- */
+
+  VideoPlayer.prototype._openContext = function (e) {
+    this._closeMenu();
+    this._closeAbout();
+    this._ctxOpen = true;
+    var menu = this.refs.ctx;
+    menu.classList.add('vp--visible');
+    // Place near the cursor, clamped inside the player
+    var rect = this.container.getBoundingClientRect();
+    var x = clamp(e.clientX - rect.left, 4, Math.max(4, rect.width - menu.offsetWidth - 4));
+    var y = clamp(e.clientY - rect.top, 4, Math.max(4, rect.height - menu.offsetHeight - 4));
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    this._poke();
+  };
+
+  VideoPlayer.prototype._closeContext = function () {
+    if (!this._ctxOpen) return;
+    this._ctxOpen = false;
+    this.refs.ctx.classList.remove('vp--visible');
+  };
+
+  VideoPlayer.prototype._openAbout = function () {
+    this._closeMenu();
+    this._aboutOpen = true;
+    this.refs.about.classList.add('vp--visible');
+    // Move focus into the dialog (the context menu holding focus just hid,
+    // which would drop focus to body and break Esc/keyboard handling)
+    this.refs.aboutClose.focus({ preventScroll: true });
+    this._poke();
+  };
+
+  VideoPlayer.prototype._closeAbout = function () {
+    if (!this._aboutOpen) return;
+    this._aboutOpen = false;
+    this.refs.about.classList.remove('vp--visible');
   };
 
   /* ---------- Settings menu ---------- */
