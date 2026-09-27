@@ -27,7 +27,8 @@
     volume: '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.47 4.47 0 0 0 16.5 12zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>',
     mute: '<svg viewBox="0 0 24 24"><path d="M16.5 12A4.5 4.5 0 0 0 14 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.21 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12a9 9 0 0 0-7-8.77v2.06A7 7 0 0 1 19 12zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z"/></svg>',
     fullscreen: '<svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
-    fullscreenExit: '<svg viewBox="0 0 24 24"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>'
+    fullscreenExit: '<svg viewBox="0 0 24 24"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>',
+    settings: '<svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>'
   };
 
   /* ================= 유틸 ================= */
@@ -113,7 +114,10 @@
     mute: '음소거',
     unmute: '음소거 해제',
     fullscreen: '전체화면',
-    exitFullscreen: '전체화면 종료'
+    exitFullscreen: '전체화면 종료',
+    settings: '설정',
+    playbackRate: '재생 속도',
+    autoSkip: '오프닝/엔딩 자동 스킵'
   };
 
   /* ================= 플레이어 ================= */
@@ -151,6 +155,16 @@
     this._lastVolume = 1;
     this._lastTap = { time: 0, side: null };
     this._tapAcc = { left: { last: 0, count: 0 }, right: { last: 0, count: 0 } };
+    this._menuOpen = false;
+
+    // 설정값 복원 (localStorage)
+    this._rate = 1;
+    this._autoSkip = false;
+    try {
+      var savedRate = parseFloat(global.localStorage.getItem('vp:rate'));
+      if (savedRate > 0) this._rate = savedRate;
+      this._autoSkip = global.localStorage.getItem('vp:autoSkip') === '1';
+    } catch (e) {}
 
     this.isTouch = (global.matchMedia && global.matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in global);
 
@@ -239,7 +253,23 @@
             '<button type="button" class="vp__btn vp__btn--volume" aria-label="' + L.mute + '">' + ICONS.volume + '</button>' +
             '<input class="vp__volume-slider" type="range" min="0" max="1" step="0.05" value="1" aria-label="볼륨" />' +
           '</div>' +
+          '<button type="button" class="vp__btn vp__btn--settings" aria-label="' + L.settings + '" aria-haspopup="true" aria-expanded="false">' + ICONS.settings + '</button>' +
           '<button type="button" class="vp__btn vp__btn--fullscreen" aria-label="' + L.fullscreen + '">' + ICONS.fullscreen + '</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="vp__menu" role="menu">' +
+        '<div class="vp__menu-handle"></div>' +
+        '<div class="vp__menu-section">' +
+          '<div class="vp__menu-title">' + L.playbackRate + '</div>' +
+          '<div class="vp__menu-rates">' +
+            [0.5, 0.75, 1, 1.25, 1.5, 2].map(function (rate) {
+              return '<button type="button" class="vp__rate" data-rate="' + rate + '">' + rate + 'x</button>';
+            }).join('') +
+          '</div>' +
+        '</div>' +
+        '<div class="vp__menu-section vp__menu-toggle-row">' +
+          '<span>' + L.autoSkip + '</span>' +
+          '<button type="button" class="vp__switch" role="switch" aria-checked="false" aria-label="' + L.autoSkip + '"><span class="vp__switch-knob"></span></button>' +
         '</div>' +
       '</div>'
     );
@@ -267,9 +297,13 @@
       volumeBtn: q('.vp__btn--volume'),
       volumeSlider: q('.vp__volume-slider'),
       fsBtn: q('.vp__btn--fullscreen'),
+      settingsBtn: q('.vp__btn--settings'),
+      menu: q('.vp__menu'),
+      autoSkipSwitch: q('.vp__switch'),
       timeCur: q('.vp__time-current'),
       timeDur: q('.vp__time-duration')
     };
+    this.refs.rateChips = Array.prototype.slice.call(container.querySelectorAll('.vp__rate'));
 
     var fsSupported = (document.fullscreenEnabled && container.requestFullscreen) ||
       container.webkitRequestFullscreen || video.webkitEnterFullscreen;
@@ -277,8 +311,24 @@
 
     this.refs.volumeSlider.value = video.muted ? 0 : video.volume;
 
-    // 모바일: 음소거 버튼을 컨트롤 패널 밖(플레이어 우측 상단)으로 이동
-    if (this.isTouch) container.appendChild(this.refs.volume);
+    // 저장된 설정 적용
+    video.playbackRate = this._rate;
+    this._updateRateChips();
+    this._updateAutoSkipSwitch();
+
+    // 모바일: 음소거/설정 버튼을 컨트롤 패널 밖(플레이어 우측 상단)으로 이동.
+    // 설정 메뉴는 body로 보내 뷰포트 하단 바텀 시트로 표시 (플레이어 overflow에 안 잘리게)
+    if (this.isTouch) {
+      container.appendChild(this.refs.volume);
+      container.appendChild(this.refs.settingsBtn);
+      this.refs.menu.classList.add('vp__menu--sheet'); // body 이동 후에도 스타일이 유지되도록 자체 클래스 부여
+      document.body.appendChild(this.refs.menu);
+      // 배경 딤 처리용 백드롭
+      var backdrop = document.createElement('div');
+      backdrop.className = 'vp__menu-backdrop';
+      this.refs.backdrop = backdrop;
+      document.body.appendChild(backdrop);
+    }
   };
 
   /* ---------- 이벤트 바인딩 ---------- */
@@ -369,6 +419,55 @@
       self._poke();
     });
 
+    /* 설정 메뉴 */
+    this._on(r.settingsBtn, 'click', function (e) {
+      e.stopPropagation();
+      self._toggleMenu();
+    });
+    this._on(r.menu, 'click', function (e) { e.stopPropagation(); self._poke(); });
+    this.refs.rateChips.forEach(function (chip) {
+      self._on(chip, 'click', function () { self._setRate(parseFloat(chip.dataset.rate)); });
+    });
+    this._on(r.autoSkipSwitch, 'click', function () { self._setAutoSkip(!self._autoSkip); });
+    this._on(document, 'click', function () { self._closeMenu(); });
+
+    /* 모바일 바텀 시트: 백드롭 탭 닫기 + 아래로 드래그해서 닫기 */
+    if (this.isTouch && r.backdrop) {
+      this._on(r.backdrop, 'click', function () { self._closeMenu(); });
+      var startY = 0, curDy = 0, dragging = false, canDrag = false;
+      this._on(r.menu, 'touchstart', function (e) {
+        if (!self._menuOpen) return;
+        dragging = true;
+        canDrag = r.menu.scrollTop <= 0; // 내용이 맨 위일 때만 당겨 닫기
+        startY = e.touches[0].clientY;
+        curDy = 0;
+        r.menu.style.transition = 'none';
+        r.backdrop.style.transition = 'none';
+      }, { passive: true });
+      this._on(r.menu, 'touchmove', function (e) {
+        if (!dragging || !canDrag) return;
+        var dy = e.touches[0].clientY - startY;
+        if (dy <= 0) return;
+        if (e.cancelable) e.preventDefault();
+        curDy = dy;
+        r.menu.style.transform = 'translate(-50%, ' + dy + 'px)';
+        r.backdrop.style.opacity = String(Math.max(0, 1 - dy / 220));
+      }, { passive: false });
+      function endDrag() {
+        if (!dragging) return;
+        dragging = false;
+        r.menu.style.transition = '';
+        r.backdrop.style.transition = '';
+        if (curDy > 90) self._closeMenu();
+        else {
+          r.menu.style.transform = '';
+          r.backdrop.style.opacity = '';
+        }
+      }
+      this._on(r.menu, 'touchend', endDrag);
+      this._on(r.menu, 'touchcancel', endDrag);
+    }
+
     /* 키보드 */
     this._on(c, 'keydown', function (e) { self._onKeydown(e); });
 
@@ -377,7 +476,10 @@
     this._on(c, 'mouseleave', function () {
       clearTimeout(self._hideTimer);
       if (!v.paused && !v.ended && !self._dragging) {
-        self._hideTimer = setTimeout(function () { c.classList.add('vp--idle'); }, 500);
+        self._hideTimer = setTimeout(function () {
+          c.classList.add('vp--idle');
+          self._closeMenu();
+        }, 500);
       }
     });
     this._on(r.controls, 'pointerenter', function () { self._hoveringControls = true; self._poke(); });
@@ -391,6 +493,11 @@
       c.classList.toggle('vp--fullscreen', fs);
       r.fsBtn.innerHTML = fs ? ICONS.fullscreenExit : ICONS.fullscreen;
       r.fsBtn.setAttribute('aria-label', fs ? L.exitFullscreen : L.fullscreen);
+      // 모바일 전체화면: body에 있는 건 렌더링이 안 되므로 메뉴·백드롭을 플레이어 안으로
+      if (self.isTouch && r.backdrop) {
+        if (fs) { c.appendChild(r.menu); c.appendChild(r.backdrop); }
+        else { document.body.appendChild(r.menu); document.body.appendChild(r.backdrop); }
+      }
       if (fs && self.isTouch && screen.orientation && screen.orientation.lock) {
         screen.orientation.lock('landscape').catch(function () {});
       } else if (!fs && screen.orientation && screen.orientation.unlock) {
@@ -579,6 +686,12 @@
       var c = this.chapters[i];
       if (c.type !== 'normal' && t >= c.start && t < c.end) { seg = c; break; }
     }
+    // 자동 스킵: 구간 진입 즉시 건너뛰기 (버튼 표시 없이)
+    if (seg && this._autoSkip) {
+      this.video.currentTime = seg.end + 0.05;
+      this._flash(seg.type === 'opening' ? this.options.labels.skipOpening : this.options.labels.skipEnding);
+      seg = null;
+    }
     if (seg === this._skipSegment) return;
     this._skipSegment = seg;
     if (seg) {
@@ -678,6 +791,9 @@
     var o = this.options;
     var handled = true;
     switch (e.key) {
+      case 'Escape':
+        if (this._menuOpen) this._closeMenu(); else handled = false;
+        break;
       case ' ': case 'k': case 'K': this.togglePlay(); break;
       case 'ArrowLeft': this.seekBy(-o.keyboardSeek); break;
       case 'ArrowRight': this.seekBy(o.keyboardSeek); break;
@@ -746,7 +862,68 @@
     else {
       clearTimeout(this._hideTimer);
       this.container.classList.add('vp--idle');
+      this._closeMenu();
     }
+  };
+
+  /* ---------- 설정 메뉴 ---------- */
+
+  VideoPlayer.prototype._toggleMenu = function () {
+    if (this._menuOpen) this._closeMenu();
+    else this._openMenu();
+  };
+
+  VideoPlayer.prototype._openMenu = function () {
+    this._menuOpen = true;
+    this.refs.menu.classList.add('vp--visible');
+    if (this.refs.backdrop) this.refs.backdrop.classList.add('vp--visible');
+    this.container.classList.add('vp--menu-open');
+    this.refs.settingsBtn.setAttribute('aria-expanded', 'true');
+    this._poke();
+  };
+
+  VideoPlayer.prototype._closeMenu = function () {
+    if (!this._menuOpen) return;
+    this._menuOpen = false;
+    this.refs.menu.classList.remove('vp--visible');
+    if (this.refs.backdrop) this.refs.backdrop.classList.remove('vp--visible');
+    // 드래그 중 남은 인라인 스타일 정리
+    this.refs.menu.style.transform = '';
+    this.refs.menu.style.transition = '';
+    if (this.refs.backdrop) {
+      this.refs.backdrop.style.opacity = '';
+      this.refs.backdrop.style.transition = '';
+    }
+    this.container.classList.remove('vp--menu-open');
+    this.refs.settingsBtn.setAttribute('aria-expanded', 'false');
+  };
+
+  VideoPlayer.prototype._setRate = function (rate) {
+    this._rate = rate;
+    this.video.playbackRate = rate;
+    try { global.localStorage.setItem('vp:rate', String(rate)); } catch (e) {}
+    this._updateRateChips();
+    this._flash(rate + 'x');
+    this._poke();
+  };
+
+  VideoPlayer.prototype._setAutoSkip = function (on) {
+    this._autoSkip = on;
+    try { global.localStorage.setItem('vp:autoSkip', on ? '1' : '0'); } catch (e) {}
+    this._updateAutoSkipSwitch();
+    this._updateSkipButton(); // 켜는 즉시 현재 구간에도 반영
+    this._poke();
+  };
+
+  VideoPlayer.prototype._updateRateChips = function () {
+    var self = this;
+    this.refs.rateChips.forEach(function (chip) {
+      chip.classList.toggle('vp--active', parseFloat(chip.dataset.rate) === self._rate);
+    });
+  };
+
+  VideoPlayer.prototype._updateAutoSkipSwitch = function () {
+    this.refs.autoSkipSwitch.setAttribute('aria-checked', String(this._autoSkip));
   };
 
   /* ---------- 컨트롤 표시/숨김 ---------- */
@@ -759,8 +936,9 @@
     clearTimeout(this._hideTimer);
     this._hideTimer = setTimeout(function () {
       if (!self.video.paused && !self.video.ended && !self._dragging &&
-          !self._hoveringControls && !self._focusInControls) {
+          !self._hoveringControls && !self._focusInControls && !self._menuOpen) {
         self.container.classList.add('vp--idle');
+        self._closeMenu();
       }
     }, delay != null ? delay : this.options.hideDelay);
   };
@@ -843,6 +1021,12 @@
     clearTimeout(this._singleTapTimer);
     clearTimeout(this._skipTimer);
     if (this._ro) this._ro.disconnect();
+    // 모바일에서 body로 옮긴 설정 메뉴/백드롭 제거
+    [this.refs.menu, this.refs.backdrop].forEach(function (elm) {
+      if (elm && elm.parentNode && elm.parentNode !== this.container) {
+        elm.parentNode.removeChild(elm);
+      }
+    }, this);
     if (this._wrapped) {
       var parent = this.container.parentNode;
       if (parent) {

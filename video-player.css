@@ -4,13 +4,16 @@
    - 데스크톱(.vp--desktop) / 모바일(.vp--touch) 분리 최적화
    ============================================================ */
 
-.vp {
+/* 테마 변수는 :root에 둠 — 모바일 설정 메뉴가 body로 이동해도 참조 가능 */
+:root {
   --vp-accent: #9d6bff;                    /* 진행률 바: 보라 */
   --vp-glass: rgba(16, 20, 28, 0.42);
   --vp-glass-strong: rgba(14, 17, 24, 0.62);
   --vp-border: rgba(255, 255, 255, 0.14);
   --vp-text: #f4f6f8;
+}
 
+.vp {
   position: relative;
   width: 100%;
   background: #000;
@@ -227,6 +230,92 @@
   pointer-events: none;
 }
 
+/* ---------------- 설정 메뉴 ---------------- */
+
+.vp__menu {
+  position: absolute;
+  bottom: 92px;  /* 데스크톱: 컨트롤 패널 위 우측 */
+  right: 10px;
+  z-index: 7;
+  min-width: 210px;
+  background: var(--vp-glass-strong);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  border: 1px solid var(--vp-border);
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  /* 모바일에서 body로 이동하므로 색/글꼴을 자체 지정 */
+  color: var(--vp-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+  line-height: 1.4;
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease, bottom 0.25s ease;
+}
+.vp__menu.vp--visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+/* 스킵 버튼과 메뉴가 겹치면 메뉴(z-7)가 위에 덮어 표시됨 */
+
+.vp__menu-section + .vp__menu-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.vp__menu-title { font-size: 12px; font-weight: 600; opacity: 0.7; margin-bottom: 8px; }
+
+.vp__menu-rates { display: flex; flex-wrap: wrap; gap: 6px; }
+.vp__rate {
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.vp__rate:hover { background: rgba(255, 255, 255, 0.16); }
+.vp__rate.vp--active {
+  background: var(--vp-accent);
+  font-weight: 700;
+}
+
+.vp__menu-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+/* 토글 스위치 */
+.vp__switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--vp-border);
+  background: rgba(255, 255, 255, 0.22);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.vp__switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.2s ease;
+}
+.vp__switch[aria-checked="true"] { background: var(--vp-accent); border-color: transparent; }
+.vp__switch[aria-checked="true"] .vp__switch-knob { left: 20px; }
+
 /* ---------------- 재생바 ---------------- */
 
 .vp__progress {
@@ -387,7 +476,7 @@
 .vp--touch .vp__volume {
   position: absolute;
   top: 10px;
-  right: 10px;
+  right: 62px; /* 설정 버튼(44px) 왼쪽 */
   z-index: 4;
   border-radius: 50%;
   background: var(--vp-glass);
@@ -397,6 +486,69 @@
   transition: opacity 0.25s ease;
 }
 .vp--touch.vp--idle .vp__volume { opacity: 0; pointer-events: none; }
+
+/* 모바일 설정 버튼: 우측 상단 모서리 (JS가 .vp 직하로 이동시킴) */
+.vp--touch .vp__btn--settings {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 4;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--vp-glass);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  border: 1px solid var(--vp-border);
+  transition: opacity 0.25s ease;
+}
+.vp--touch.vp--idle .vp__btn--settings { opacity: 0; pointer-events: none; }
+
+/* 모바일 설정 메뉴: 디스플레이(뷰포트) 최하단 정중앙 바텀 시트.
+   JS가 body로 옮기므로 플레이어 자손 셀렉터가 아닌 자체 클래스로 지정 */
+.vp__menu--sheet {
+  position: fixed;
+  left: 50%;
+  right: auto;
+  top: auto;
+  bottom: calc(6px + env(safe-area-inset-bottom, 0px)); /* 안전영역 + 살짝 여백 */
+  width: min(480px, calc(100% - 16px));
+  transform: translate(-50%, 12px);
+  z-index: 9999;
+  min-width: 0;
+  max-height: 55vh;
+  overflow-y: auto;
+  border-radius: 16px;
+  padding: 8px 12px 12px;
+  touch-action: pan-y;
+}
+.vp__menu--sheet.vp--visible { transform: translate(-50%, 0); }
+/* 모바일 전체화면: body 밖은 렌더링이 안 되므로 JS가 플레이어 안으로 옮김 → 플레이어 기준 바텀 시트 */
+.vp--touch.vp--fullscreen .vp__menu--sheet { position: absolute; }
+
+/* 바텀 시트 드래그 핸들 (회색 바, 모바일 시트에서만 표시) */
+.vp__menu-handle { display: none; }
+.vp__menu--sheet .vp__menu-handle {
+  display: block;
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.45);
+  margin: 0 auto 10px;
+}
+
+/* 배경 딤 백드롭 (모바일 시트 전용) */
+.vp__menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.vp__menu-backdrop.vp--visible { opacity: 1; pointer-events: auto; }
+.vp--touch.vp--fullscreen .vp__menu-backdrop { position: absolute; }
 
 /* 중앙 재생/일시정지: 컨트롤이 보이는 동안 항상 표시 */
 .vp--touch .vp__center-play {
@@ -516,7 +668,8 @@
 .vp--touch.vp--compact .vp__center-play { width: 56px; height: 56px; }
 .vp--touch.vp--compact .vp__center-play svg { width: 26px; height: 26px; }
 
-.vp--touch.vp--compact .vp__volume { top: 6px; right: 6px; }
+.vp--touch.vp--compact .vp__volume { top: 6px; right: 46px; } /* 설정 버튼(34px) 왼쪽 */
+.vp--touch.vp--compact .vp__btn--settings { top: 6px; right: 6px; }
 
 .vp--touch.vp--compact .vp__skip-btn {
   right: 44px;   /* 컨트롤 여백 6 + 전체화면 32 + 간격 6 */
