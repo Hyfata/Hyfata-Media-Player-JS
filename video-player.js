@@ -2,14 +2,13 @@
  * VideoPlayer — 애니/영화용 HTML5 비디오 플레이어
  * - 영상 내장 챕터(지원 브라우저) 또는 WebVTT 챕터 파일로 오프닝/엔딩 구간 인식
  * - 오프닝(opening/intro/op), 엔딩(ending/credits/ed) 자동 분류 + 스킵 버튼
- * - 재생바에 오프닝/엔딩 구간 색상 표시
+ * - 재생바에 오프닝/엔딩 구간 끊김 표시
  * - 키보드 탐색(←/→, J/L), 모바일 더블탭 탐색(YouTube 스타일)
  * - 글래스모피즘 UI, 데스크톱/모바일 각각 최적화된 컨트롤
  *
  * 사용법:
  *   new VideoPlayer('#container', {
  *     src: 'video.mp4',
- *     title: '애니 1화',
  *     chaptersUrl: 'chapters.vtt',   // 내장 챕터를 못 읽는 브라우저용 폴백
  *     seekStep: 10,                  // 더블탭/버튼 탐색 초 (기본 10)
  *     keyboardSeek: 5                // 방향키 탐색 초 (기본 5)
@@ -107,6 +106,8 @@
   var DEFAULT_LABELS = {
     skipOpening: '오프닝 건너뛰기',
     skipEnding: '엔딩 건너뛰기',
+    opening: '오프닝',
+    ending: '엔딩',
     play: '재생',
     pause: '일시정지',
     mute: '음소거',
@@ -122,7 +123,6 @@
     this.options = Object.assign({
       src: null,
       poster: null,
-      title: '',
       chaptersUrl: null,
       autoplay: false,
       muted: false,
@@ -140,6 +140,7 @@
     this._listeners = [];
     this.chapters = [];
     this.chaptersSource = null;
+    this._sections = [];
     this._skipTarget = null;
     this._dragging = false;
     this._hoveringControls = false;
@@ -201,14 +202,10 @@
       '<div class="vp__spinner"><div class="vp__spinner-ring"></div></div>' +
       '<button type="button" class="vp__center-play" aria-label="' + L.play + '">' + ICONS.play + '</button>' +
       '<div class="vp__seek-flash" aria-hidden="true"></div>' +
-      '<div class="vp__title"></div>' +
       '<button type="button" class="vp__skip-btn"><span class="vp__skip-label"></span>' + ICONS.skipNext + '</button>' +
       '<div class="vp__controls">' +
         '<div class="vp__progress" role="slider" aria-label="재생 위치" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
-          '<div class="vp__progress-track"></div>' +
-          '<div class="vp__progress-buffered"></div>' +
-          '<div class="vp__progress-played"></div>' +
-          '<div class="vp__progress-segments"></div>' +
+          '<div class="vp__progress-sections"></div>' +
           '<div class="vp__progress-handle"></div>' +
           '<div class="vp__progress-tooltip"></div>' +
         '</div>' +
@@ -236,14 +233,11 @@
       zoneR: q('.vp__tap-zone--right'),
       centerPlay: q('.vp__center-play'),
       seekFlash: q('.vp__seek-flash'),
-      title: q('.vp__title'),
       skipBtn: q('.vp__skip-btn'),
       skipLabel: q('.vp__skip-label'),
       controls: q('.vp__controls'),
       progress: q('.vp__progress'),
-      buffered: q('.vp__progress-buffered'),
-      played: q('.vp__progress-played'),
-      segments: q('.vp__progress-segments'),
+      sectionsWrap: q('.vp__progress-sections'),
       handle: q('.vp__progress-handle'),
       tooltip: q('.vp__progress-tooltip'),
       playBtn: q('.vp__btn--play'),
@@ -255,9 +249,6 @@
       timeCur: q('.vp__time-current'),
       timeDur: q('.vp__time-duration')
     };
-
-    if (o.title) this.refs.title.textContent = o.title;
-    else this.refs.title.style.display = 'none';
 
     var fsSupported = (document.fullscreenEnabled && container.requestFullscreen) ||
       container.webkitRequestFullscreen || video.webkitEnterFullscreen;
@@ -303,11 +294,12 @@
     this._on(v, 'timeupdate', function () { self._onTimeUpdate(); });
     function onMeta() {
       r.timeDur.textContent = formatTime(v.duration);
-      self._renderSegments();
+      self._renderSections();
     }
     this._on(v, 'loadedmetadata', onMeta);
     this._on(v, 'durationchange', onMeta);
     this._on(v, 'progress', function () { self._updateBuffer(); });
+    this._on(global, 'resize', function () { self._updateProgressUI(); });
 
     this._on(v, 'waiting', function () { c.classList.add('vp--loading'); });
     this._on(v, 'seeking', function () { c.classList.add('vp--loading'); });
@@ -453,34 +445,91 @@
     this.chapters = cues.map(function (cue) {
       return { start: cue.start, end: cue.end, title: cue.title, type: classifyChapter(cue.title) };
     }).sort(function (a, b) { return a.start - b.start; });
-    this._renderSegments();
+    this._renderSections();
     this._updateSkipButton();
   };
 
-  /** 재생바에 오프닝/엔딩 구간 + 챕터 경계 표시 */
-  VideoPlayer.prototype._renderSegments = function () {
-    var box = this.refs.segments;
-    box.innerHTML = '';
+  /**
+   * 재생바를 오프닝/엔딩 경계에서 실제로 끊어 구간별 조각으로 렌더링.
+   * 각 조각(.vp__section)은 flex로 시간 비율만큼 너비를 가지고,
+   * 조각 사이는 CSS gap으로 투명하게 끊긴다.
+   */
+  VideoPlayer.prototype._renderSections = function () {
+    var wrap = this.refs.sectionsWrap;
+    wrap.innerHTML = '';
+    this._sections = [];
     var d = this.video.duration;
-    if (!isFinite(d) || d <= 0 || !this.chapters.length) return;
-    var frag = document.createDocumentFragment();
+    if (!isFinite(d) || d <= 0) return;
+
+    var pts = [0, d];
     this.chapters.forEach(function (c) {
-      var left = (c.start / d) * 100;
-      if (c.type !== 'normal') {
-        var seg = document.createElement('div');
-        seg.className = 'vp__segment vp__segment--' + c.type;
-        seg.style.left = left + '%';
-        seg.style.width = ((c.end - c.start) / d) * 100 + '%';
-        frag.appendChild(seg);
-      }
-      if (c.start > 0.5) {
-        var tick = document.createElement('div');
-        tick.className = 'vp__tick';
-        tick.style.left = left + '%';
-        frag.appendChild(tick);
-      }
+      if (c.type === 'normal') return;
+      if (c.start > 0.5 && c.start < d - 0.5) pts.push(c.start);
+      if (c.end > 0.5 && c.end < d - 0.5) pts.push(c.end);
     });
-    box.appendChild(frag);
+    pts = pts.filter(function (v, i) { return pts.indexOf(v) === i; })
+             .sort(function (a, b) { return a - b; });
+
+    for (var i = 0; i < pts.length - 1; i++) {
+      var share = pts[i + 1] - pts[i];
+      var el = document.createElement('div');
+      el.className = 'vp__section';
+      el.style.flexGrow = String(share);
+      el.innerHTML = '<div class="vp__section-buffered"></div><div class="vp__section-played"></div>';
+      wrap.appendChild(el);
+      this._sections.push({
+        start: pts[i],
+        end: pts[i + 1],
+        dur: share,
+        el: el,
+        bufferedEl: el.querySelector('.vp__section-buffered'),
+        playedEl: el.querySelector('.vp__section-played')
+      });
+    }
+    this._updateProgressUI();
+    this._updateBuffer();
+  };
+
+  /** 시간 → 재생바 x좌표(px) */
+  VideoPlayer.prototype._timeToX = function (t) {
+    var secs = this._sections;
+    for (var i = 0; i < secs.length; i++) {
+      var s = secs[i];
+      if (t <= s.end || i === secs.length - 1) {
+        return s.el.offsetLeft + clamp((t - s.start) / s.dur, 0, 1) * s.el.offsetWidth;
+      }
+    }
+    return 0;
+  };
+
+  /** 재생바 x좌표(px) → 시간 (끊긴 갭 위는 다음 조각 시작으로) */
+  VideoPlayer.prototype._xToTime = function (x) {
+    var secs = this._sections;
+    if (!secs.length) return 0;
+    for (var i = 0; i < secs.length; i++) {
+      var s = secs[i];
+      var left = s.el.offsetLeft;
+      var w = s.el.offsetWidth;
+      if (x <= left + w || i === secs.length - 1) {
+        if (x < left) return s.start;
+        return s.start + clamp((x - left) / w, 0, 1) * s.dur;
+      }
+    }
+    return secs[secs.length - 1].end;
+  };
+
+  /** 재생 위치에 맞춰 각 조각의 진행률과 핸들 위치 갱신 */
+  VideoPlayer.prototype._updateProgressUI = function () {
+    var v = this.video;
+    var t = v.currentTime;
+    var d = v.duration;
+    this._sections.forEach(function (s) {
+      s.playedEl.style.width = clamp((t - s.start) / s.dur, 0, 1) * 100 + '%';
+    });
+    this.refs.handle.style.left = this._timeToX(t) + 'px';
+    if (isFinite(d) && d > 0) {
+      this.refs.progress.setAttribute('aria-valuenow', String(Math.round((t / d) * 100)));
+    }
   };
 
   VideoPlayer.prototype._chapterAt = function (t) {
@@ -521,17 +570,8 @@
   /* ---------- 재생 상태 ---------- */
 
   VideoPlayer.prototype._onTimeUpdate = function () {
-    var v = this.video;
-    var r = this.refs;
-    var t = v.currentTime;
-    var d = v.duration;
-    if (isFinite(d) && d > 0) {
-      var pct = (t / d) * 100;
-      r.played.style.width = pct + '%';
-      r.handle.style.left = pct + '%';
-      r.progress.setAttribute('aria-valuenow', String(Math.round(pct)));
-    }
-    r.timeCur.textContent = formatTime(t);
+    this.refs.timeCur.textContent = formatTime(this.video.currentTime);
+    this._updateProgressUI();
     this._updateBuffer();
     this._updateSkipButton();
   };
@@ -539,16 +579,17 @@
   VideoPlayer.prototype._updateBuffer = function () {
     var v = this.video;
     var d = v.duration;
-    if (!isFinite(d) || d <= 0) return;
+    if (!isFinite(d) || d <= 0 || !this._sections.length) return;
     try {
       var b = v.buffered;
+      var end = 0;
       for (var i = 0; i < b.length; i++) {
-        if (b.start(i) <= v.currentTime && v.currentTime <= b.end(i)) {
-          this.refs.buffered.style.width = (b.end(i) / d) * 100 + '%';
-          return;
-        }
+        if (b.start(i) <= v.currentTime && v.currentTime <= b.end(i)) { end = b.end(i); break; }
       }
-      if (b.length) this.refs.buffered.style.width = (b.end(b.length - 1) / d) * 100 + '%';
+      if (!end && b.length) end = b.end(b.length - 1);
+      this._sections.forEach(function (s) {
+        s.bufferedEl.style.width = clamp((end - s.start) / s.dur, 0, 1) * 100 + '%';
+      });
     } catch (e) {}
   };
 
@@ -556,25 +597,26 @@
 
   VideoPlayer.prototype._seekFromEvent = function (e) {
     var rect = this.refs.progress.getBoundingClientRect();
-    var ratio = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+    var x = clamp(e.clientX - rect.left, 0, rect.width);
     var d = this.video.duration;
     if (!isFinite(d) || d <= 0) return;
-    this.video.currentTime = ratio * d;
-    var pct = ratio * 100;
-    this.refs.played.style.width = pct + '%';
-    this.refs.handle.style.left = pct + '%';
+    this.video.currentTime = this._xToTime(x);
+    this._updateProgressUI();
   };
 
   VideoPlayer.prototype._updateTooltip = function (e) {
     var rect = this.refs.progress.getBoundingClientRect();
-    var ratio = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+    var x = clamp(e.clientX - rect.left, 0, rect.width);
     var d = this.video.duration;
     if (!isFinite(d) || d <= 0) return;
-    var t = ratio * d;
+    var t = this._xToTime(x);
     var ch = this._chapterAt(t);
     var tip = this.refs.tooltip;
-    tip.textContent = formatTime(t) + (ch && ch.title ? ' · ' + ch.title : '');
-    tip.style.left = clamp(ratio * 100, 3, 97) + '%';
+    var label = '';
+    if (ch && ch.type === 'opening') label = ' · ' + this.options.labels.opening;
+    else if (ch && ch.type === 'ending') label = ' · ' + this.options.labels.ending;
+    tip.textContent = formatTime(t) + label;
+    tip.style.left = clamp(x, 30, Math.max(30, rect.width - 30)) + 'px';
   };
 
   /* ---------- 키보드 ---------- */

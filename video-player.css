@@ -5,9 +5,7 @@
    ============================================================ */
 
 .vp {
-  --vp-accent: #4d9fff;
-  --vp-opening: rgba(53, 208, 255, 0.55);  /* 오프닝 구간: 시안 */
-  --vp-ending: rgba(255, 122, 184, 0.55);  /* 엔딩 구간: 핑크 */
+  --vp-accent: #9d6bff;                    /* 진행률 바: 보라 */
   --vp-glass: rgba(16, 20, 28, 0.42);
   --vp-glass-strong: rgba(14, 17, 24, 0.62);
   --vp-border: rgba(255, 255, 255, 0.14);
@@ -165,29 +163,6 @@
   100% { opacity: 0; transform: translate(-50%, -50%) scale(1.05); }
 }
 
-/* ---------------- 제목 ---------------- */
-
-.vp__title {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 4;
-  background: var(--vp-glass);
-  backdrop-filter: blur(14px) saturate(1.4);
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  border: 1px solid var(--vp-border);
-  border-radius: 10px;
-  padding: 6px 12px;
-  font-size: 13px;
-  font-weight: 600;
-  max-width: 70%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition: opacity 0.25s ease;
-}
-.vp--idle .vp__title { opacity: 0; }
-
 /* ---------------- 스킵 버튼 ---------------- */
 
 .vp__skip-btn {
@@ -250,37 +225,35 @@
   touch-action: none;
 }
 
-.vp__progress-track,
-.vp__progress-buffered,
-.vp__progress-played,
-.vp__progress-segments {
+/* 진행바: 오프닝/엔딩 경계에서 실제로 끊긴 구간 조각들 */
+.vp__progress-sections {
   position: absolute;
-  top: 50%;
-  left: 0;
-  transform: translateY(-50%);
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px; /* 조각 사이는 투명하게 끊김 */
+}
+
+.vp__section {
+  position: relative;
   height: 4px;
-  border-radius: 999px;
+  flex-basis: 0;
+  min-width: 0;
+  border-radius: 999px; /* 조각 양끝 모서리 라운드 */
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.22); /* 트랙 */
   transition: height 0.15s ease;
 }
-.vp__progress-track    { width: 100%; background: rgba(255, 255, 255, 0.22); }
-.vp__progress-buffered { width: 0;    background: rgba(255, 255, 255, 0.28); }
-.vp__progress-played   { width: 0;    background: var(--vp-accent); }
-.vp__progress-segments { width: 100%; background: transparent; overflow: hidden; }
-
-/* 오프닝/엔딩 구간 (재생바 위에 항상 보이도록 최상단 레이어) */
-.vp__segment { position: absolute; top: 0; bottom: 0; }
-.vp__segment--opening { background: var(--vp-opening); }
-.vp__segment--ending  { background: var(--vp-ending); }
-
-/* 챕터 경계 눈금 */
-.vp__tick {
+.vp__section-buffered,
+.vp__section-played {
   position: absolute;
   top: 0;
+  left: 0;
   bottom: 0;
-  width: 2px;
-  margin-left: -1px;
-  background: rgba(255, 255, 255, 0.45);
+  width: 0;
 }
+.vp__section-buffered { background: rgba(255, 255, 255, 0.28); }
+.vp__section-played   { background: var(--vp-accent); }
 
 .vp__progress-handle {
   position: absolute;
@@ -298,14 +271,8 @@
 .vp--desktop .vp__progress:hover .vp__progress-handle,
 .vp--dragging .vp__progress-handle { transform: translate(-50%, -50%) scale(1.15); }
 
-.vp--desktop .vp__progress:hover .vp__progress-track,
-.vp--desktop .vp__progress:hover .vp__progress-buffered,
-.vp--desktop .vp__progress:hover .vp__progress-played,
-.vp--desktop .vp__progress:hover .vp__progress-segments,
-.vp--dragging .vp__progress-track,
-.vp--dragging .vp__progress-buffered,
-.vp--dragging .vp__progress-played,
-.vp--dragging .vp__progress-segments { height: 6px; }
+.vp--desktop .vp__progress:hover .vp__section,
+.vp--dragging .vp__section { height: 6px; }
 
 /* 재생바 툴팁 (시간 · 챕터명) */
 .vp__progress-tooltip {
@@ -402,10 +369,7 @@
   border-radius: 16px;
 }
 .vp--touch .vp__progress { height: 24px; }
-.vp--touch .vp__progress-track,
-.vp--touch .vp__progress-buffered,
-.vp--touch .vp__progress-played,
-.vp--touch .vp__progress-segments { height: 5px; }
+.vp--touch .vp__section { height: 5px; }
 .vp--touch .vp__progress-handle { width: 14px; height: 14px; }
 .vp--touch .vp__time { font-size: 13px; }
 .vp--touch .vp__center-play { width: 80px; height: 80px; }
@@ -425,6 +389,5 @@
 
 @media (max-width: 480px) {
   .vp { border-radius: 12px; }
-  .vp__title { font-size: 12px; padding: 5px 10px; }
   .vp__time { font-size: 11.5px; margin: 0 4px; }
 }
