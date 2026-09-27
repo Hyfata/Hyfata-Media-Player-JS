@@ -7,11 +7,15 @@
 <link rel="stylesheet" href="video-player.css" />
 <style>
   * { box-sizing: border-box; }
+  /* html에도 베이스 배경 지정 — iOS 오버스크롤/세이프에어리아에서 흰 바탕 노출 방지 */
+  html { background: #0d1220; }
   body {
     margin: 0;
     min-height: 100vh;
+    min-height: 100dvh;
     background: linear-gradient(135deg, #0d1220 0%, #1a1030 45%, #0d1b2e 100%);
-    background-attachment: fixed;
+    /* background-attachment: fixed 제거 — iOS에서 position:fixed 바텀시트/백드롭과
+       충돌해 상·하단 흰 바가 생기고 메뉴를 닫아도 남는 원인이었음 */
     color: #eef1f6;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
       "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;

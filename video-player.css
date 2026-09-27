@@ -251,11 +251,22 @@
     "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
   line-height: 1.4;
   opacity: 0;
+  visibility: hidden;
   transform: translateY(8px);
   pointer-events: none;
-  transition: opacity 0.2s ease, transform 0.2s ease, bottom 0.25s ease;
+  /* visibility 지연 숨김: opacity:0 상태에서도 Safari가 backdrop-filter 레이어를
+     계속 합성해 잔상(레터박스)이 남는 버그 방지. 숨길 때만 0.2s 뒤에 visibility 전환 */
+  transition: opacity 0.2s ease, transform 0.2s ease, bottom 0.25s ease,
+    visibility 0s linear 0.2s;
 }
-.vp__menu.vp--visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.vp__menu.vp--visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition: opacity 0.2s ease, transform 0.2s ease, bottom 0.25s ease,
+    visibility 0s;
+}
 /* 스킵 버튼과 메뉴가 겹치면 메뉴(z-7)가 위에 덮어 표시됨 */
 
 .vp__menu-section + .vp__menu-section {
@@ -475,7 +486,7 @@
 /* 음소거 버튼: 우측 상단 플로팅 (JS가 .vp 직하로 이동시킴) */
 .vp--touch .vp__volume {
   position: absolute;
-  top: 10px;
+  top: calc(10px + env(safe-area-inset-top, 0px)); /* 노치/상태바 안전영역 아래로 */
   right: 62px; /* 설정 버튼(44px) 왼쪽 */
   z-index: 4;
   border-radius: 50%;
@@ -490,7 +501,7 @@
 /* 모바일 설정 버튼: 우측 상단 모서리 (JS가 .vp 직하로 이동시킴) */
 .vp--touch .vp__btn--settings {
   position: absolute;
-  top: 10px;
+  top: calc(10px + env(safe-area-inset-top, 0px)); /* 노치/상태바 안전영역 아래로 */
   right: 10px;
   z-index: 4;
   width: 44px;
@@ -521,6 +532,8 @@
   border-radius: 16px;
   padding: 8px 12px 12px;
   touch-action: pan-y;
+  overscroll-behavior: contain; /* 시트 스크롤이 뒤 페이지로 전파돼
+    백드롭이 어긋나며 상·하단 밴드가 생기는 것 방지 */
 }
 .vp__menu--sheet.vp--visible { transform: translate(-50%, 0); }
 /* 모바일 전체화면: body 밖은 렌더링이 안 되므로 JS가 플레이어 안으로 옮김 → 플레이어 기준 바텀 시트 */
@@ -540,14 +553,24 @@
 /* 배경 딤 백드롭 (모바일 시트 전용) */
 .vp__menu-backdrop {
   position: fixed;
-  inset: 0;
+  /* iOS Safari 툴바 show/hide로 레이아웃 뷰포트가 어긋나 상·하단에
+     안 덮인 밴드(박스처럼 보임)가 생기는 버그 방지용 오버스캔.
+     fixed 요소라 스크롤바는 생기지 않음 */
+  inset: -25vh -25vw;
   z-index: 9998;
   background: rgba(0, 0, 0, 0.45);
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity 0.2s ease;
+  touch-action: none; /* 열려 있는 동안 뒤 페이지 스크롤/제스처 차단 */
+  transition: opacity 0.2s ease, visibility 0s linear 0.2s;
 }
-.vp__menu-backdrop.vp--visible { opacity: 1; pointer-events: auto; }
+.vp__menu-backdrop.vp--visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 0.2s ease, visibility 0s;
+}
 .vp--touch.vp--fullscreen .vp__menu-backdrop { position: absolute; }
 
 /* 중앙 재생/일시정지: 컨트롤이 보이는 동안 항상 표시 */
@@ -618,6 +641,16 @@
 /* 모바일: 하단 박스 3개가 부모(.vp__controls)의 페이드에 끌려가면
    애니메이션 중 블러가 꺼지므로, 각 박스가 직접 페이드하도록 분리 */
 .vp--touch .vp__controls { transition: none; }
+/* 모바일 컨트롤 래퍼/행은 투명하므로 터치를 가로채지 않게 하고,
+   실제 인터랙티브 박스(재생바/전체화면)만 터치를 받음.
+   이렇게 해야 건너뛰기 버튼을 z-index로 위로 올리지 않아도 클릭되고,
+   재생바 드래그 툴팁(컨트롤 z-5 안)이 건너뛰기 버튼(z-4) 위에 표시됨 */
+.vp--touch .vp__controls,
+.vp--touch .vp__row,
+.vp--touch .vp__spacer { pointer-events: none; }
+.vp--touch .vp__progress,
+.vp--touch .vp__time,
+.vp--touch .vp__btn--fullscreen { pointer-events: auto; }
 .vp--touch.vp--idle .vp__controls { opacity: 1; transform: none; }
 .vp--touch .vp__progress,
 .vp--touch .vp__time,
@@ -637,7 +670,7 @@
 .vp--touch .vp__skip-btn {
   right: 56px;   /* 컨트롤 여백 8 + 전체화면 40 + 간격 8 */
   bottom: 44px;  /* 버튼 행 세로 중앙 정렬 */
-  z-index: 6;    /* 투명한 컨트롤 래퍼(z-5)가 터치를 가로채지 못하게 위로 */
+  z-index: 4;    /* 컨트롤 래퍼(z-5)보다 아래 — 툴팁이 위에 오도록. 터치 가로채기는 pointer-events:none으로 해결 */
   padding: 9px 14px;
   font-size: 13px;
 }
@@ -668,8 +701,8 @@
 .vp--touch.vp--compact .vp__center-play { width: 56px; height: 56px; }
 .vp--touch.vp--compact .vp__center-play svg { width: 26px; height: 26px; }
 
-.vp--touch.vp--compact .vp__volume { top: 6px; right: 46px; } /* 설정 버튼(34px) 왼쪽 */
-.vp--touch.vp--compact .vp__btn--settings { top: 6px; right: 6px; }
+.vp--touch.vp--compact .vp__volume { top: calc(6px + env(safe-area-inset-top, 0px)); right: 46px; } /* 설정 버튼(34px) 왼쪽 */
+.vp--touch.vp--compact .vp__btn--settings { top: calc(6px + env(safe-area-inset-top, 0px)); right: 6px; }
 
 .vp--touch.vp--compact .vp__skip-btn {
   right: 44px;   /* 컨트롤 여백 6 + 전체화면 32 + 간격 6 */
