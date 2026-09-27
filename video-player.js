@@ -224,6 +224,9 @@
     this._menuOpen = false;
     this._ctxOpen = false;
     this._aboutOpen = false;
+    // Seek requested before metadata arrived (iOS often has none until
+    // first play). Applied on loadedmetadata/canplay, then confirmed.
+    this._pendingSeek = null;
 
     // Restore saved settings (localStorage)
     this._rate = 1;
@@ -489,9 +492,14 @@
     function onMeta() {
       r.timeDur.textContent = formatTime(v.duration);
       self._renderSections();
+      self._applyPendingSeek();
     }
     this._on(v, 'loadedmetadata', onMeta);
     this._on(v, 'durationchange', onMeta);
+    // iOS may drop the first currentTime set right after metadata:
+    // re-apply on canplay if the seek never landed.
+    this._on(v, 'canplay', function () { self._applyPendingSeek(); });
+    this._on(v, 'seeked', function () { self._confirmPendingSeek(); });
     this._on(v, 'progress', function () { self._updateBuffer(); });
     this._on(global, 'resize', function () { self._updateProgressUI(); });
 
@@ -866,6 +874,29 @@
     this._flash(this._txt('skipped'));
   };
 
+  /**
+   * Apply a seek queued before metadata arrived. Safe to call any time:
+   * no-ops when there is nothing queued, no metadata yet, or the seek
+   * already landed. Stale entries expire after 15 s so a dropped iOS
+   * seek can never cause a surprise jump later.
+   */
+  VideoPlayer.prototype._applyPendingSeek = function () {
+    if (!this._pendingSeek) return;
+    if (Date.now() - this._pendingSeek.at > 15000) { this._pendingSeek = null; return; }
+    var v = this.video;
+    if (v.readyState < 1 || !isFinite(v.duration) || v.duration <= 0) return;
+    var target = clamp(this._pendingSeek.t, 0, Math.max(0, v.duration - 0.05));
+    if (Math.abs(v.currentTime - target) < 0.3) { this._pendingSeek = null; return; }
+    v.currentTime = target;
+  };
+
+  /** Drop the queued seek once the playhead confirms it landed (or it expired) */
+  VideoPlayer.prototype._confirmPendingSeek = function () {
+    if (!this._pendingSeek) return;
+    if (Math.abs(this.video.currentTime - this._pendingSeek.t) < 0.5) this._pendingSeek = null;
+    else if (Date.now() - this._pendingSeek.at > 15000) this._pendingSeek = null;
+  };
+
   /* ---------- Playback state ---------- */
 
   VideoPlayer.prototype._onTimeUpdate = function () {
@@ -873,6 +904,7 @@
     this._updateProgressUI();
     this._updateBuffer();
     this._updateSkipButton();
+    this._confirmPendingSeek();
   };
 
   VideoPlayer.prototype._updateBuffer = function () {
@@ -1156,6 +1188,8 @@
   /* ---------- Public API ---------- */
 
   VideoPlayer.prototype.play = function () {
+    // Land on a queued resume position before starting (no-op when none)
+    this._applyPendingSeek();
     var p = this.video.play();
     if (p && p.catch) p.catch(function () {});
   };
@@ -1168,15 +1202,32 @@
   };
 
   VideoPlayer.prototype.seekTo = function (sec) {
-    var d = this.video.duration;
-    if (!isFinite(d) || d <= 0) return;
-    this.video.currentTime = clamp(sec, 0, Math.max(0, d - 0.05));
+    var v = this.video;
+    if (v.readyState < 1 || !isFinite(v.duration) || v.duration <= 0) {
+      // No metadata yet (typical on iOS before first play): touching
+      // currentTime now would be dropped or wedge the element in
+      // "seeking" forever. Queue it and jump once metadata arrives.
+      this._pendingSeek = { t: Math.max(0, sec), at: Date.now() };
+      // Kick off the metadata fetch only if nothing started yet (needs a
+      // gesture on iOS). Never call load() mid-fetch: it aborts the fetch
+      // and can wedge iOS in endless buffering.
+      if (v.networkState === 0) { try { v.load(); } catch (e) {} }
+      return;
+    }
+    this._pendingSeek = null;
+    v.currentTime = clamp(sec, 0, Math.max(0, v.duration - 0.05));
   };
 
   VideoPlayer.prototype.seekBy = function (sec, silent) {
-    var d = this.video.duration;
-    if (!isFinite(d) || d <= 0) return;
-    this.video.currentTime = clamp(this.video.currentTime + sec, 0, Math.max(0, d - 0.05));
+    var v = this.video;
+    if (v.readyState < 1 || !isFinite(v.duration) || v.duration <= 0) {
+      var base = this._pendingSeek ? this._pendingSeek.t : (isFinite(v.currentTime) ? v.currentTime : 0);
+      this._pendingSeek = { t: Math.max(0, base + sec), at: Date.now() };
+      if (v.networkState === 0) { try { v.load(); } catch (e) {} }
+      return;
+    }
+    this._pendingSeek = null;
+    v.currentTime = clamp(v.currentTime + sec, 0, Math.max(0, v.duration - 0.05));
     if (!silent) this._flash(this._txt('seekFlash', { sign: sec > 0 ? '+' : '', sec: sec }));
   };
 
