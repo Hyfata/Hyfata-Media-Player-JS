@@ -217,6 +217,7 @@
     this._sections = [];
     this._skipTarget = null;
     this._skipSegment = null;
+    this._autoSkippedSeg = null;
     this._skipTimer = null;
     this._dragging = false;
     this._hoveringControls = false;
@@ -553,6 +554,7 @@
       self._clearPendingSeek();
       self._skipTarget = null;
       self._skipSegment = null;
+      self._autoSkippedSeg = null;
       self._hideSkipButton();
       self._renderSections(); // clears stale pieces (no duration yet)
     });
@@ -861,9 +863,18 @@
     // Routed through seekTo for the frame-data guards + queue (touch) and
     // in-flight coalescing — a raw currentTime write here wedges iOS too.
     if (seg && this._autoSkip) {
-      this.seekTo(seg.end + 0.05);
-      this._flash(seg.type === 'opening' ? this.options.labels.skipOpening : this.options.labels.skipEnding);
+      // Skip at most once per segment. An ending that runs to the end of the
+      // file gets clamped by seekTo to duration - 0.05 — still inside the
+      // segment — so without this marker the next timeupdate would seek
+      // again and the playhead would regress forever, never reaching 'ended'.
+      if (this._autoSkippedSeg !== seg) {
+        this._autoSkippedSeg = seg;
+        this.seekTo(seg.end + 0.05);
+        this._flash(seg.type === 'opening' ? this.options.labels.skipOpening : this.options.labels.skipEnding);
+      }
       seg = null;
+    } else if (!seg) {
+      this._autoSkippedSeg = null; // left every segment: re-arm auto-skip
     }
     // Hide the button when the skip-button toggle is OFF
     if (seg && !this._showSkip) seg = null;
