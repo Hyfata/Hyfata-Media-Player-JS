@@ -117,7 +117,8 @@
     exitFullscreen: '전체화면 종료',
     settings: '설정',
     playbackRate: '재생 속도',
-    autoSkip: '오프닝/엔딩 자동 스킵'
+    autoSkip: '오프닝/엔딩 자동 스킵',
+    showSkip: '스킵 버튼 표시'
   };
 
   /* ================= 플레이어 ================= */
@@ -160,10 +161,12 @@
     // 설정값 복원 (localStorage)
     this._rate = 1;
     this._autoSkip = false;
+    this._showSkip = true;
     try {
       var savedRate = parseFloat(global.localStorage.getItem('vp:rate'));
       if (savedRate > 0) this._rate = savedRate;
       this._autoSkip = global.localStorage.getItem('vp:autoSkip') === '1';
+      if (global.localStorage.getItem('vp:showSkip') === '0') this._showSkip = false;
     } catch (e) {}
 
     this.isTouch = (global.matchMedia && global.matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in global);
@@ -269,7 +272,11 @@
         '</div>' +
         '<div class="vp__menu-section vp__menu-toggle-row">' +
           '<span>' + L.autoSkip + '</span>' +
-          '<button type="button" class="vp__switch" role="switch" aria-checked="false" aria-label="' + L.autoSkip + '"><span class="vp__switch-knob"></span></button>' +
+          '<button type="button" class="vp__switch vp__switch--auto-skip" role="switch" aria-checked="false" aria-label="' + L.autoSkip + '"><span class="vp__switch-knob"></span></button>' +
+        '</div>' +
+        '<div class="vp__menu-section vp__menu-toggle-row">' +
+          '<span>' + L.showSkip + '</span>' +
+          '<button type="button" class="vp__switch vp__switch--show-skip" role="switch" aria-checked="true" aria-label="' + L.showSkip + '"><span class="vp__switch-knob"></span></button>' +
         '</div>' +
       '</div>'
     );
@@ -299,7 +306,8 @@
       fsBtn: q('.vp__btn--fullscreen'),
       settingsBtn: q('.vp__btn--settings'),
       menu: q('.vp__menu'),
-      autoSkipSwitch: q('.vp__switch'),
+      autoSkipSwitch: q('.vp__switch--auto-skip'),
+      showSkipSwitch: q('.vp__switch--show-skip'),
       timeCur: q('.vp__time-current'),
       timeDur: q('.vp__time-duration')
     };
@@ -315,6 +323,7 @@
     video.playbackRate = this._rate;
     this._updateRateChips();
     this._updateAutoSkipSwitch();
+    this._updateShowSkipSwitch();
 
     // 모바일: 음소거/설정 버튼을 컨트롤 패널 밖(플레이어 우측 상단)으로 이동.
     // 설정 메뉴는 body로 보내 뷰포트 하단 바텀 시트로 표시 (플레이어 overflow에 안 잘리게)
@@ -429,6 +438,7 @@
       self._on(chip, 'click', function () { self._setRate(parseFloat(chip.dataset.rate)); });
     });
     this._on(r.autoSkipSwitch, 'click', function () { self._setAutoSkip(!self._autoSkip); });
+    this._on(r.showSkipSwitch, 'click', function () { self._setShowSkip(!self._showSkip); });
     this._on(document, 'click', function () { self._closeMenu(); });
 
     /* 모바일 바텀 시트: 백드롭 탭 닫기 + 아래로 드래그해서 닫기 */
@@ -510,7 +520,7 @@
     /* 재생바 (포인터 통합: 마우스/터치/펜) */
     this._on(r.progress, 'pointerdown', function (e) {
       e.preventDefault();
-      c.focus({ preventScroll: true });
+      self._safeFocus();
       self._dragging = true;
       c.classList.add('vp--dragging');
       if (r.progress.setPointerCapture) {
@@ -692,6 +702,8 @@
       this._flash(seg.type === 'opening' ? this.options.labels.skipOpening : this.options.labels.skipEnding);
       seg = null;
     }
+    // 스킵 버튼 표시 OFF면 버튼 숨김
+    if (seg && !this._showSkip) seg = null;
     if (seg === this._skipSegment) return;
     this._skipSegment = seg;
     if (seg) {
@@ -820,9 +832,21 @@
 
   /* ---------- 터치: 더블탭 탐색 ---------- */
 
+  /**
+   * 터치+전체화면에서는 programmatic focus 생략.
+   * iOS Safari가 전체화면 중 포커스를 '입력 시도'로 오탐해
+   * 피싱 경고("전체화면인 상태에서 입력하는 것 같습니다")를 띄우는데,
+   * 터치 환경엔 물리 키보드가 없어 포커스가 없어도 동작에 지장 없음.
+   * 데스크톱 전체화면(키보드 단축키용)은 그대로 포커스함.
+   */
+  VideoPlayer.prototype._safeFocus = function () {
+    if (this.isTouch && (document.fullscreenElement || document.webkitFullscreenElement)) return;
+    this.container.focus({ preventScroll: true });
+  };
+
   VideoPlayer.prototype._onTap = function (e) {
     e.preventDefault();
-    this.container.focus({ preventScroll: true });
+    this._safeFocus();
     var rect = this.refs.tapLayer.getBoundingClientRect();
     var x = e.changedTouches[0].clientX - rect.left;
     var side = x < rect.width / 2 ? 'left' : 'right';
@@ -924,6 +948,18 @@
 
   VideoPlayer.prototype._updateAutoSkipSwitch = function () {
     this.refs.autoSkipSwitch.setAttribute('aria-checked', String(this._autoSkip));
+  };
+
+  VideoPlayer.prototype._setShowSkip = function (on) {
+    this._showSkip = on;
+    try { global.localStorage.setItem('vp:showSkip', on ? '1' : '0'); } catch (e) {}
+    this._updateShowSkipSwitch();
+    this._updateSkipButton(); // 끄는 즉시 버튼 숨김 / 켜면 현재 구간에 바로 표시
+    this._poke();
+  };
+
+  VideoPlayer.prototype._updateShowSkipSwitch = function () {
+    this.refs.showSkipSwitch.setAttribute('aria-checked', String(this._showSkip));
   };
 
   /* ---------- 컨트롤 표시/숨김 ---------- */

@@ -487,7 +487,7 @@
 .vp--touch .vp__volume {
   position: absolute;
   top: calc(10px + env(safe-area-inset-top, 0px)); /* 노치/상태바 안전영역 아래로 */
-  right: 62px; /* 설정 버튼(44px) 왼쪽 */
+  right: 68px; /* 설정 버튼(44px) + 간격 14px */
   z-index: 4;
   border-radius: 50%;
   background: var(--vp-glass);
@@ -677,6 +677,15 @@
 /* 오버레이가 숨겨진 동안엔 우측 하단 모서리로 이동 */
 .vp--touch.vp--idle .vp__skip-btn { right: 10px; bottom: 10px; }
 
+/* 모바일 전체화면: 하단 컨트롤·스킵 버튼을 홈 인디케이터/제스처 바 위로 띄움.
+   safe-area가 없는 기기(Android 제스처 바 등)에서도 겹치지 않게 기본 16px 리프트 */
+.vp--touch.vp--fullscreen .vp__controls { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+.vp--touch.vp--fullscreen .vp__skip-btn { bottom: calc(52px + env(safe-area-inset-bottom, 0px)); }
+.vp--touch.vp--fullscreen.vp--idle .vp__skip-btn { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+.vp--touch.vp--compact.vp--fullscreen .vp__controls { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+.vp--touch.vp--compact.vp--fullscreen .vp__skip-btn { bottom: calc(40px + env(safe-area-inset-bottom, 0px)); }
+.vp--touch.vp--compact.vp--fullscreen.vp--idle .vp__skip-btn { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+
 /* ============================================================
    모바일 compact 모드 — 플레이어가 작게 표시될 때 UI 전체 축소
    (JS가 너비 < 540px 또는 높이 < 230px이면 vp--compact 부여)
@@ -701,7 +710,7 @@
 .vp--touch.vp--compact .vp__center-play { width: 56px; height: 56px; }
 .vp--touch.vp--compact .vp__center-play svg { width: 26px; height: 26px; }
 
-.vp--touch.vp--compact .vp__volume { top: calc(6px + env(safe-area-inset-top, 0px)); right: 46px; } /* 설정 버튼(34px) 왼쪽 */
+.vp--touch.vp--compact .vp__volume { top: calc(6px + env(safe-area-inset-top, 0px)); right: 50px; } /* 설정 버튼(34px) + 간격 10px */
 .vp--touch.vp--compact .vp__btn--settings { top: calc(6px + env(safe-area-inset-top, 0px)); right: 6px; }
 
 .vp--touch.vp--compact .vp__skip-btn {
