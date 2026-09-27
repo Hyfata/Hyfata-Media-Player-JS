@@ -1,23 +1,32 @@
 /*!
- * VideoPlayer — 애니/영화용 HTML5 비디오 플레이어
- * - 영상 내장 챕터(지원 브라우저) 또는 WebVTT 챕터 파일로 오프닝/엔딩 구간 인식
- * - 오프닝(opening/intro/op), 엔딩(ending/credits/ed) 자동 분류 + 스킵 버튼
- * - 재생바에 오프닝/엔딩 구간 끊김 표시
- * - 키보드 탐색(←/→, J/L), 모바일 더블탭 탐색(YouTube 스타일)
- * - 글래스모피즘 UI, 데스크톱/모바일 각각 최적화된 컨트롤
+ * Hyfata Media Player — HTML5 video player for anime/movies
+ * - Detects opening/ending segments from embedded chapters (where supported)
+ *   or a WebVTT chapters file
+ * - Auto-classifies opening (opening/intro/op) and ending (ending/credits/ed)
+ *   with a skip button
+ * - Progress bar shows breaks at opening/ending boundaries
+ * - Keyboard seek (←/→, J/L), mobile double-tap seek (YouTube style)
+ * - Glassmorphism UI, separately optimized controls for desktop/mobile
+ * - Built-in English/Korean language packs, extensible via VideoPlayer.addLang()
  *
- * 사용법:
+ * Usage:
  *   new VideoPlayer('#container', {
  *     src: 'video.mp4',
- *     chaptersUrl: 'chapters.vtt',   // 내장 챕터를 못 읽는 브라우저용 폴백
- *     seekStep: 10,                  // 더블탭/버튼 탐색 초 (기본 10)
- *     keyboardSeek: 5                // 방향키 탐색 초 (기본 5)
+ *     chaptersUrl: 'chapters.vtt',   // fallback for browsers without embedded chapters
+ *     lang: 'en',                    // 'en' (default) | 'ko' | custom pack code
+ *     labels: { play: 'Play ▶' },    // per-string overrides
+ *     seekStep: 10,                  // double-tap/button seek seconds (default 10)
+ *     keyboardSeek: 5                // arrow-key seek seconds (default 5)
  *   });
+ *
+ * Add a language:
+ *   VideoPlayer.addLang('ja', { play: '再生', pause: '一時停止', ... });
+ *   new VideoPlayer('#container', { src: 'video.mp4', lang: 'ja' });
  */
 (function (global) {
   'use strict';
 
-  /* ================= 아이콘 ================= */
+  /* ================= Icons ================= */
   var ICONS = {
     play: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
     pause: '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>',
@@ -31,7 +40,7 @@
     settings: '<svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>'
   };
 
-  /* ================= 유틸 ================= */
+  /* ================= Utils ================= */
 
   function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 
@@ -46,7 +55,7 @@
   }
 
   /**
-   * 챕터 제목으로 구간 분류
+   * Classify a segment from its chapter title
    * opening: opening / intro / op
    * ending:  ending / credits / ed
    */
@@ -63,7 +72,7 @@
     return (h ? parseInt(h, 10) * 3600 : 0) + parseInt(m, 10) * 60 + parseInt(s, 10) + parseInt(ms, 10) / 1000;
   }
 
-  /** WebVTT 텍스트 → [{start, end, title}] */
+  /** WebVTT text → [{start, end, title}] */
   function parseVTT(text) {
     var cues = [];
     var clean = text.replace(/^\uFEFF/, '').replace(/\r/g, '');
@@ -85,7 +94,7 @@
     return cues;
   }
 
-  /** 브라우저가 노출하는 영상 내장 챕터 트랙 읽기 (지원 브라우저 한정) */
+  /** Read embedded chapter tracks exposed by the browser (supporting browsers only) */
   function readEmbeddedChapters(video) {
     var tracks = video.textTracks;
     if (!tracks) return null;
@@ -102,26 +111,70 @@
     return null;
   }
 
-  /* ================= 기본 옵션 ================= */
+  /* ================= Language packs =================
+   * Default language is English. Pick another pack with `lang: 'ko'`,
+   * override single strings with `labels: {...}`, or register a new
+   * language with VideoPlayer.addLang(code, dict).
+   * Supported placeholders: {sec}, {sign}, {detail}.
+   */
 
-  var DEFAULT_LABELS = {
-    skipOpening: '오프닝 건너뛰기',
-    skipEnding: '엔딩 건너뛰기',
-    opening: '오프닝',
-    ending: '엔딩',
-    play: '재생',
-    pause: '일시정지',
-    mute: '음소거',
-    unmute: '음소거 해제',
-    fullscreen: '전체화면',
-    exitFullscreen: '전체화면 종료',
-    settings: '설정',
-    playbackRate: '재생 속도',
-    autoSkip: '오프닝/엔딩 자동 스킵',
-    showSkip: '스킵 버튼 표시'
+  var LANGS = {
+    en: {
+      skipOpening: 'Skip Opening',
+      skipEnding: 'Skip Ending',
+      opening: 'Opening',
+      ending: 'Ending',
+      play: 'Play',
+      pause: 'Pause',
+      mute: 'Mute',
+      unmute: 'Unmute',
+      fullscreen: 'Fullscreen',
+      exitFullscreen: 'Exit Fullscreen',
+      settings: 'Settings',
+      playbackRate: 'Playback speed',
+      autoSkip: 'Auto-skip opening/ending',
+      showSkip: 'Show skip button',
+      skipped: 'Skipped',
+      volume: 'Volume',
+      seekPosition: 'Seek position',
+      seekFlash: '{sign}{sec}s',
+      seekBack: '{sec}s back',
+      seekForward: '{sec}s forward',
+      loadError: 'Could not load the video ({detail})'
+    },
+    ko: {
+      skipOpening: '오프닝 건너뛰기',
+      skipEnding: '엔딩 건너뛰기',
+      opening: '오프닝',
+      ending: '엔딩',
+      play: '재생',
+      pause: '일시정지',
+      mute: '음소거',
+      unmute: '음소거 해제',
+      fullscreen: '전체화면',
+      exitFullscreen: '전체화면 종료',
+      settings: '설정',
+      playbackRate: '재생 속도',
+      autoSkip: '오프닝/엔딩 자동 스킵',
+      showSkip: '스킵 버튼 표시',
+      skipped: '건너뛰기',
+      volume: '볼륨',
+      seekPosition: '재생 위치',
+      seekFlash: '{sign}{sec}초',
+      seekBack: '{sec}초 뒤로',
+      seekForward: '{sec}초 앞으로',
+      loadError: '영상을 불러올 수 없습니다. ({detail})'
+    }
   };
 
-  /* ================= 플레이어 ================= */
+  /** Fill {placeholders} in a label template */
+  function tmpl(str, vars) {
+    return String(str).replace(/\{(\w+)\}/g, function (m, k) {
+      return vars && vars[k] != null ? vars[k] : m;
+    });
+  }
+
+  /* ================= Player ================= */
 
   function VideoPlayer(target, options) {
     options = options || {};
@@ -129,6 +182,7 @@
       src: null,
       poster: null,
       chaptersUrl: null,
+      lang: 'en',
       autoplay: false,
       muted: false,
       loop: false,
@@ -138,10 +192,11 @@
       hideDelay: 2600,
       skipButtonDuration: 4000
     }, options);
-    this.options.labels = Object.assign({}, DEFAULT_LABELS, options.labels || {});
+    var baseLabels = LANGS[this.options.lang] || LANGS.en;
+    this.options.labels = Object.assign({}, baseLabels, options.labels || {});
 
     var containerEl = typeof target === 'string' ? document.querySelector(target) : target;
-    if (!containerEl) throw new Error('[VideoPlayer] 컨테이너를 찾을 수 없습니다: ' + target);
+    if (!containerEl) throw new Error('[VideoPlayer] container not found: ' + target);
 
     this._listeners = [];
     this.chapters = [];
@@ -158,7 +213,7 @@
     this._tapAcc = { left: { last: 0, count: 0 }, right: { last: 0, count: 0 } };
     this._menuOpen = false;
 
-    // 설정값 복원 (localStorage)
+    // Restore saved settings (localStorage)
     this._rate = 1;
     this._autoSkip = false;
     this._showSkip = true;
@@ -175,7 +230,7 @@
     this._bind();
     this._initChapters();
 
-    // 플레이어 크기에 따라 compact 모드 전환 (작을 때 UI 축소)
+    // Switch to compact mode based on player size (shrink UI when small)
     if (typeof ResizeObserver !== 'undefined') {
       var self = this;
       this._ro = new ResizeObserver(function () { self._updateSizeClass(); });
@@ -186,7 +241,7 @@
     this._poke();
   }
 
-  /** 플레이어가 작으면 vp--compact 클래스 부여 (UI 크기 축소용) */
+  /** Shrink the UI when the player is small (adds vp--compact under 540px wide or 230px tall) */
   VideoPlayer.prototype._updateSizeClass = function () {
     var w = this.container.clientWidth;
     var h = this.container.clientHeight;
@@ -197,8 +252,24 @@
   VideoPlayer.parseVTT = parseVTT;
   VideoPlayer.classifyChapter = classifyChapter;
   VideoPlayer.formatTime = formatTime;
+  VideoPlayer.LANGS = LANGS;
 
-  /* ---------- DOM 구성 ---------- */
+  /**
+   * Register a language pack. Missing keys fall back to English.
+   *   VideoPlayer.addLang('ja', { play: '再生', pause: '一時停止' });
+   */
+  VideoPlayer.addLang = function (code, dict) {
+    LANGS[code] = Object.assign({}, LANGS.en, dict);
+  };
+
+  /** Translate a label key with {placeholders} (falls back to English, then the key) */
+  VideoPlayer.prototype._txt = function (key, vars) {
+    var s = this.options.labels[key];
+    if (s == null) s = LANGS.en[key] || key;
+    return tmpl(s, vars);
+  };
+
+  /* ---------- DOM setup ---------- */
 
   VideoPlayer.prototype._build = function (containerEl) {
     var o = this.options;
@@ -241,20 +312,20 @@
       '<div class="vp__seek-flash" aria-hidden="true"></div>' +
       '<button type="button" class="vp__skip-btn"><span class="vp__skip-label"></span>' + ICONS.skipNext + '</button>' +
       '<div class="vp__controls">' +
-        '<div class="vp__progress" role="slider" aria-label="재생 위치" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
+        '<div class="vp__progress" role="slider" aria-label="' + L.seekPosition + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
           '<div class="vp__progress-sections"></div>' +
           '<div class="vp__progress-handle"></div>' +
           '<div class="vp__progress-tooltip"></div>' +
         '</div>' +
         '<div class="vp__row">' +
           '<button type="button" class="vp__btn vp__btn--play" aria-label="' + L.play + '">' + ICONS.play + '</button>' +
-          '<button type="button" class="vp__btn vp__btn--rewind" aria-label="' + o.seekStep + '초 뒤로">' + ICONS.rewind + '</button>' +
-          '<button type="button" class="vp__btn vp__btn--forward" aria-label="' + o.seekStep + '초 앞으로">' + ICONS.forward + '</button>' +
+          '<button type="button" class="vp__btn vp__btn--rewind" aria-label="' + tmpl(L.seekBack, { sec: o.seekStep }) + '">' + ICONS.rewind + '</button>' +
+          '<button type="button" class="vp__btn vp__btn--forward" aria-label="' + tmpl(L.seekForward, { sec: o.seekStep }) + '">' + ICONS.forward + '</button>' +
           '<div class="vp__time"><span class="vp__time-current">0:00</span><span class="vp__time-sep">/</span><span class="vp__time-duration">0:00</span></div>' +
           '<div class="vp__spacer"></div>' +
           '<div class="vp__volume">' +
             '<button type="button" class="vp__btn vp__btn--volume" aria-label="' + L.mute + '">' + ICONS.volume + '</button>' +
-            '<input class="vp__volume-slider" type="range" min="0" max="1" step="0.05" value="1" aria-label="볼륨" />' +
+            '<input class="vp__volume-slider" type="range" min="0" max="1" step="0.05" value="1" aria-label="' + L.volume + '" />' +
           '</div>' +
           '<button type="button" class="vp__btn vp__btn--settings" aria-label="' + L.settings + '" aria-haspopup="true" aria-expanded="false">' + ICONS.settings + '</button>' +
           '<button type="button" class="vp__btn vp__btn--fullscreen" aria-label="' + L.fullscreen + '">' + ICONS.fullscreen + '</button>' +
@@ -319,20 +390,21 @@
 
     this.refs.volumeSlider.value = video.muted ? 0 : video.volume;
 
-    // 저장된 설정 적용
+    // Apply saved settings
     video.playbackRate = this._rate;
     this._updateRateChips();
     this._updateAutoSkipSwitch();
     this._updateShowSkipSwitch();
 
-    // 모바일: 음소거/설정 버튼을 컨트롤 패널 밖(플레이어 우측 상단)으로 이동.
-    // 설정 메뉴는 body로 보내 뷰포트 하단 바텀 시트로 표시 (플레이어 overflow에 안 잘리게)
+    // Mobile: move mute/settings buttons out of the control panel (top-right floating).
+    // The settings menu goes to body so it can render as a viewport bottom sheet
+    // (it would be clipped by the player overflow otherwise)
     if (this.isTouch) {
       container.appendChild(this.refs.volume);
       container.appendChild(this.refs.settingsBtn);
-      this.refs.menu.classList.add('vp__menu--sheet'); // body 이동 후에도 스타일이 유지되도록 자체 클래스 부여
+      this.refs.menu.classList.add('vp__menu--sheet'); // keep styling after moving to body via a dedicated class
       document.body.appendChild(this.refs.menu);
-      // 배경 딤 처리용 백드롭
+      // Backdrop for background dimming (mobile sheet only)
       var backdrop = document.createElement('div');
       backdrop.className = 'vp__menu-backdrop';
       this.refs.backdrop = backdrop;
@@ -340,7 +412,7 @@
     }
   };
 
-  /* ---------- 이벤트 바인딩 ---------- */
+  /* ---------- Event bindings ---------- */
 
   VideoPlayer.prototype._on = function (target, type, fn, opts) {
     target.addEventListener(type, fn, opts);
@@ -355,7 +427,7 @@
     var c = this.container;
     var r = this.refs;
 
-    /* 비디오 상태 */
+    /* Video state */
     this._on(v, 'play', function () {
       c.classList.add('vp--playing');
       c.classList.remove('vp--paused');
@@ -372,7 +444,7 @@
       r.playBtn.setAttribute('aria-label', L.play);
       r.centerPlay.innerHTML = ICONS.play;
       r.centerPlay.setAttribute('aria-label', L.play);
-      // 일시정지 중엔 오버레이가 항상 보이므로 스킵 버튼도 유지
+      // While paused the overlay stays visible, so keep the skip button up
       if (self._skipSegment) self._showSkipButton();
       c.classList.remove('vp--idle');
       clearTimeout(self._hideTimer);
@@ -410,11 +482,11 @@
         self._errorEl.className = 'vp__error';
         c.appendChild(self._errorEl);
       }
-      self._errorEl.textContent = '영상을 불러올 수 없습니다. (' + (v.error.message || 'code ' + v.error.code) + ')';
+      self._errorEl.textContent = tmpl(L.loadError, { detail: v.error.message || 'code ' + v.error.code });
       self._errorEl.style.display = 'grid';
     });
 
-    /* 컨트롤 버튼 */
+    /* Control buttons */
     this._on(r.playBtn, 'click', function () { self.togglePlay(); });
     this._on(r.centerPlay, 'click', function (e) { e.stopPropagation(); self.togglePlay(); });
     this._on(r.rewindBtn, 'click', function () { self.seekBy(-o.seekStep); self._poke(); });
@@ -428,7 +500,7 @@
       self._poke();
     });
 
-    /* 설정 메뉴 */
+    /* Settings menu */
     this._on(r.settingsBtn, 'click', function (e) {
       e.stopPropagation();
       self._toggleMenu();
@@ -441,14 +513,14 @@
     this._on(r.showSkipSwitch, 'click', function () { self._setShowSkip(!self._showSkip); });
     this._on(document, 'click', function () { self._closeMenu(); });
 
-    /* 모바일 바텀 시트: 백드롭 탭 닫기 + 아래로 드래그해서 닫기 */
+    /* Mobile bottom sheet: tap backdrop to close + drag down to close */
     if (this.isTouch && r.backdrop) {
       this._on(r.backdrop, 'click', function () { self._closeMenu(); });
       var startY = 0, curDy = 0, dragging = false, canDrag = false;
       this._on(r.menu, 'touchstart', function (e) {
         if (!self._menuOpen) return;
         dragging = true;
-        canDrag = r.menu.scrollTop <= 0; // 내용이 맨 위일 때만 당겨 닫기
+        canDrag = r.menu.scrollTop <= 0; // only pull-to-close when scrolled to the top
         startY = e.touches[0].clientY;
         curDy = 0;
         r.menu.style.transition = 'none';
@@ -478,10 +550,10 @@
       this._on(r.menu, 'touchcancel', endDrag);
     }
 
-    /* 키보드 */
+    /* Keyboard */
     this._on(c, 'keydown', function (e) { self._onKeydown(e); });
 
-    /* 자동 숨김 */
+    /* Auto-hide */
     this._on(c, 'mousemove', function () { self._poke(); });
     this._on(c, 'mouseleave', function () {
       clearTimeout(self._hideTimer);
@@ -497,13 +569,14 @@
     this._on(r.controls, 'focusin', function () { self._focusInControls = true; self._poke(); });
     this._on(r.controls, 'focusout', function () { self._focusInControls = false; self._poke(); });
 
-    /* 전체화면 상태 */
+    /* Fullscreen state */
     function onFsChange() {
       var fs = !!(document.fullscreenElement || document.webkitFullscreenElement);
       c.classList.toggle('vp--fullscreen', fs);
       r.fsBtn.innerHTML = fs ? ICONS.fullscreenExit : ICONS.fullscreen;
       r.fsBtn.setAttribute('aria-label', fs ? L.exitFullscreen : L.fullscreen);
-      // 모바일 전체화면: body에 있는 건 렌더링이 안 되므로 메뉴·백드롭을 플레이어 안으로
+      // Mobile fullscreen: anything outside body doesn't render,
+      // so move the menu/backdrop inside the player
       if (self.isTouch && r.backdrop) {
         if (fs) { c.appendChild(r.menu); c.appendChild(r.backdrop); }
         else { document.body.appendChild(r.menu); document.body.appendChild(r.backdrop); }
@@ -517,7 +590,7 @@
     this._on(document, 'fullscreenchange', onFsChange);
     this._on(document, 'webkitfullscreenchange', onFsChange);
 
-    /* 재생바 (포인터 통합: 마우스/터치/펜) */
+    /* Progress bar (unified pointer: mouse/touch/pen) */
     this._on(r.progress, 'pointerdown', function (e) {
       e.preventDefault();
       self._safeFocus();
@@ -542,7 +615,7 @@
     this._on(r.progress, 'pointerup', endDrag);
     this._on(r.progress, 'pointercancel', endDrag);
 
-    /* 탭/클릭 (플랫폼별 분기) */
+    /* Tap/click (per-platform branch) */
     if (this.isTouch) {
       this._on(r.tapLayer, 'touchend', function (e) { self._onTap(e); }, { passive: false });
     } else {
@@ -551,7 +624,7 @@
     }
   };
 
-  /* ---------- 챕터 ---------- */
+  /* ---------- Chapters ---------- */
 
   VideoPlayer.prototype._initChapters = function () {
     var self = this;
@@ -581,7 +654,7 @@
           if (cues.length) self._applyChapters(cues, 'vtt');
         })
         .catch(function (err) {
-          console.warn('[VideoPlayer] 챕터(WebVTT) 로드 실패:', err.message || err);
+          console.warn('[VideoPlayer] chapter (WebVTT) load failed:', err.message || err);
         });
     }
   };
@@ -597,9 +670,9 @@
   };
 
   /**
-   * 재생바를 오프닝/엔딩 경계에서 실제로 끊어 구간별 조각으로 렌더링.
-   * 각 조각(.vp__section)은 flex로 시간 비율만큼 너비를 가지고,
-   * 조각 사이는 CSS gap으로 투명하게 끊긴다.
+   * Split the progress bar into real per-segment pieces at opening/ending boundaries.
+   * Each piece (.vp__section) is sized by time share via flex,
+   * with transparent gaps (CSS gap) between pieces.
    */
   VideoPlayer.prototype._renderSections = function () {
     var wrap = this.refs.sectionsWrap;
@@ -637,10 +710,10 @@
     this._updateBuffer();
   };
 
-  /** 시간 → 재생바 x좌표(px, .vp__progress 기준) */
+  /** Time → x (px, relative to .vp__progress) */
   VideoPlayer.prototype._timeToX = function (t) {
     var secs = this._sections;
-    var base = this.refs.sectionsWrap.offsetLeft; // 모바일 박스 안쪽 여백
+    var base = this.refs.sectionsWrap.offsetLeft; // inner padding of the mobile box
     for (var i = 0; i < secs.length; i++) {
       var s = secs[i];
       if (t <= s.end || i === secs.length - 1) {
@@ -650,11 +723,11 @@
     return 0;
   };
 
-  /** 재생바 x좌표(px, .vp__progress 기준) → 시간 (끊긴 갭 위는 다음 조각 시작으로) */
+  /** x (px, relative to .vp__progress) → time (points over a gap snap to the next piece) */
   VideoPlayer.prototype._xToTime = function (x) {
     var secs = this._sections;
     if (!secs.length) return 0;
-    x -= this.refs.sectionsWrap.offsetLeft; // 모바일 박스 안쪽 여백 보정
+    x -= this.refs.sectionsWrap.offsetLeft; // compensate the inner padding of the mobile box
     for (var i = 0; i < secs.length; i++) {
       var s = secs[i];
       var left = s.el.offsetLeft;
@@ -667,7 +740,7 @@
     return secs[secs.length - 1].end;
   };
 
-  /** 재생 위치에 맞춰 각 조각의 진행률과 핸들 위치 갱신 */
+  /** Update each piece's fill and the handle position for the current time */
   VideoPlayer.prototype._updateProgressUI = function () {
     var v = this.video;
     var t = v.currentTime;
@@ -696,13 +769,13 @@
       var c = this.chapters[i];
       if (c.type !== 'normal' && t >= c.start && t < c.end) { seg = c; break; }
     }
-    // 자동 스킵: 구간 진입 즉시 건너뛰기 (버튼 표시 없이)
+    // Auto-skip: jump immediately on entering a segment (no button shown)
     if (seg && this._autoSkip) {
       this.video.currentTime = seg.end + 0.05;
       this._flash(seg.type === 'opening' ? this.options.labels.skipOpening : this.options.labels.skipEnding);
       seg = null;
     }
-    // 스킵 버튼 표시 OFF면 버튼 숨김
+    // Hide the button when the skip-button toggle is OFF
     if (seg && !this._showSkip) seg = null;
     if (seg === this._skipSegment) return;
     this._skipSegment = seg;
@@ -717,7 +790,7 @@
     }
   };
 
-  /** 스킵 버튼 표시 + 자동 숨김 타이머 (일시정지 중엔 타이머 없이 유지) */
+  /** Show the skip button + auto-hide timer (stays up while paused) */
   VideoPlayer.prototype._showSkipButton = function () {
     var self = this;
     clearTimeout(this._skipTimer);
@@ -734,17 +807,17 @@
     this.refs.skipBtn.classList.remove('vp--visible');
   };
 
-  /** 스킵 버튼 클릭 → 현재 오프닝/엔딩 구간 끝으로 */
+  /** Skip button click → jump to the end of the current opening/ending segment */
   VideoPlayer.prototype.skipSegment = function () {
     if (this._skipTarget == null) return;
     this.video.currentTime = this._skipTarget + 0.05;
     this._skipTarget = null;
     this._skipSegment = null;
     this._hideSkipButton();
-    this._flash('건너뛰기');
+    this._flash(this._txt('skipped'));
   };
 
-  /* ---------- 재생 상태 ---------- */
+  /* ---------- Playback state ---------- */
 
   VideoPlayer.prototype._onTimeUpdate = function () {
     this.refs.timeCur.textContent = formatTime(this.video.currentTime);
@@ -770,7 +843,7 @@
     } catch (e) {}
   };
 
-  /* ---------- 재생바 탐색 ---------- */
+  /* ---------- Progress-bar seeking ---------- */
 
   VideoPlayer.prototype._seekFromEvent = function (e) {
     var rect = this.refs.progress.getBoundingClientRect();
@@ -796,7 +869,7 @@
     tip.style.left = clamp(x, 30, Math.max(30, rect.width - 30)) + 'px';
   };
 
-  /* ---------- 키보드 ---------- */
+  /* ---------- Keyboard ---------- */
 
   VideoPlayer.prototype._onKeydown = function (e) {
     if (e.target && e.target.tagName === 'INPUT') return;
@@ -830,14 +903,14 @@
     }
   };
 
-  /* ---------- 터치: 더블탭 탐색 ---------- */
+  /* ---------- Touch: double-tap seek ---------- */
 
   /**
-   * 터치+전체화면에서는 programmatic focus 생략.
-   * iOS Safari가 전체화면 중 포커스를 '입력 시도'로 오탐해
-   * 피싱 경고("전체화면인 상태에서 입력하는 것 같습니다")를 띄우는데,
-   * 터치 환경엔 물리 키보드가 없어 포커스가 없어도 동작에 지장 없음.
-   * 데스크톱 전체화면(키보드 단축키용)은 그대로 포커스함.
+   * Skip programmatic focus on touch+fullscreen.
+   * iOS Safari mistakes focus during fullscreen for a typing attempt and
+   * shows a phishing warning ("looks like you're typing in fullscreen"),
+   * while touch environments have no physical keyboard so focus is unneeded.
+   * Desktop fullscreen (for keyboard shortcuts) still focuses as before.
    */
   VideoPlayer.prototype._safeFocus = function () {
     if (this.isTouch && (document.fullscreenElement || document.webkitFullscreenElement)) return;
@@ -875,7 +948,7 @@
     var zone = side === 'left' ? this.refs.zoneL : this.refs.zoneR;
     var ripple = document.createElement('div');
     ripple.className = 'vp__ripple';
-    ripple.innerHTML = '<span class="vp__ripple-count">' + (side === 'left' ? '-' : '+') + acc.count + '초</span>';
+    ripple.innerHTML = '<span class="vp__ripple-count">' + this._txt('seekFlash', { sign: side === 'left' ? '-' : '+', sec: acc.count }) + '</span>';
     zone.appendChild(ripple);
     ripple.addEventListener('animationend', function () { ripple.remove(); });
     this._poke();
@@ -890,7 +963,7 @@
     }
   };
 
-  /* ---------- 설정 메뉴 ---------- */
+  /* ---------- Settings menu ---------- */
 
   VideoPlayer.prototype._toggleMenu = function () {
     if (this._menuOpen) this._closeMenu();
@@ -911,7 +984,7 @@
     this._menuOpen = false;
     this.refs.menu.classList.remove('vp--visible');
     if (this.refs.backdrop) this.refs.backdrop.classList.remove('vp--visible');
-    // 드래그 중 남은 인라인 스타일 정리
+    // Clear leftover inline styles from dragging
     this.refs.menu.style.transform = '';
     this.refs.menu.style.transition = '';
     if (this.refs.backdrop) {
@@ -935,7 +1008,7 @@
     this._autoSkip = on;
     try { global.localStorage.setItem('vp:autoSkip', on ? '1' : '0'); } catch (e) {}
     this._updateAutoSkipSwitch();
-    this._updateSkipButton(); // 켜는 즉시 현재 구간에도 반영
+    this._updateSkipButton(); // apply to the current segment immediately when enabling
     this._poke();
   };
 
@@ -954,7 +1027,7 @@
     this._showSkip = on;
     try { global.localStorage.setItem('vp:showSkip', on ? '1' : '0'); } catch (e) {}
     this._updateShowSkipSwitch();
-    this._updateSkipButton(); // 끄는 즉시 버튼 숨김 / 켜면 현재 구간에 바로 표시
+    this._updateSkipButton(); // hide immediately when disabling / show at once when enabling mid-segment
     this._poke();
   };
 
@@ -962,12 +1035,12 @@
     this.refs.showSkipSwitch.setAttribute('aria-checked', String(this._showSkip));
   };
 
-  /* ---------- 컨트롤 표시/숨김 ---------- */
+  /* ---------- Controls show/hide ---------- */
 
   VideoPlayer.prototype._poke = function (delay) {
     var self = this;
     this.container.classList.remove('vp--idle');
-    // 오프닝/엔딩 구간이면 스킵 버튼도 다시 표시 (타이머 리셋)
+    // Re-show the skip button inside an opening/ending segment (reset the timer)
     if (this._skipSegment) this._showSkipButton();
     clearTimeout(this._hideTimer);
     this._hideTimer = setTimeout(function () {
@@ -979,7 +1052,7 @@
     }, delay != null ? delay : this.options.hideDelay);
   };
 
-  /* ---------- 피드백 ---------- */
+  /* ---------- Feedback ---------- */
 
   VideoPlayer.prototype._flash = function (text) {
     var f = this.refs.seekFlash;
@@ -989,7 +1062,7 @@
     f.classList.add('vp--show');
   };
 
-  /* ---------- 공개 API ---------- */
+  /* ---------- Public API ---------- */
 
   VideoPlayer.prototype.play = function () {
     var p = this.video.play();
@@ -1013,7 +1086,7 @@
     var d = this.video.duration;
     if (!isFinite(d) || d <= 0) return;
     this.video.currentTime = clamp(this.video.currentTime + sec, 0, Math.max(0, d - 0.05));
-    if (!silent) this._flash((sec > 0 ? '+' : '') + sec + '초');
+    if (!silent) this._flash(this._txt('seekFlash', { sign: sec > 0 ? '+' : '', sec: sec }));
   };
 
   VideoPlayer.prototype.toggleMute = function () {
@@ -1043,7 +1116,7 @@
     } else if (c.webkitRequestFullscreen) {
       c.webkitRequestFullscreen();
     } else if (this.video.webkitEnterFullscreen) {
-      this.video.webkitEnterFullscreen(); // iOS Safari: 네이티브 전체화면으로 대체
+      this.video.webkitEnterFullscreen(); // iOS Safari: fall back to native fullscreen
     }
     this._poke();
   };
@@ -1057,7 +1130,7 @@
     clearTimeout(this._singleTapTimer);
     clearTimeout(this._skipTimer);
     if (this._ro) this._ro.disconnect();
-    // 모바일에서 body로 옮긴 설정 메뉴/백드롭 제거
+    // Remove the settings menu/backdrop moved to body on mobile
     [this.refs.menu, this.refs.backdrop].forEach(function (elm) {
       if (elm && elm.parentNode && elm.parentNode !== this.container) {
         elm.parentNode.removeChild(elm);
@@ -1076,7 +1149,7 @@
     }
   };
 
-  /* =================보내기 ================= */
+  /* ================= Exports ================= */
 
   global.VideoPlayer = VideoPlayer;
   if (typeof module !== 'undefined' && module.exports) {

@@ -1,24 +1,21 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>JS Video Player 테스트</title>
+<title>Hyfata Media Player — Demo</title>
 <link rel="stylesheet" href="video-player.css" />
 <style>
   * { box-sizing: border-box; }
-  /* html에도 베이스 배경 지정 — iOS 오버스크롤/세이프에어리아에서 흰 바탕 노출 방지 */
   html { background: #0d1220; }
   body {
     margin: 0;
     min-height: 100vh;
     min-height: 100dvh;
     background: linear-gradient(135deg, #0d1220 0%, #1a1030 45%, #0d1b2e 100%);
-    /* background-attachment: fixed 제거 — iOS에서 position:fixed 바텀시트/백드롭과
-       충돌해 상·하단 흰 바가 생기고 메뉴를 닫아도 남는 원인이었음 */
     color: #eef1f6;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-      "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+      "Noto Sans", "Helvetica Neue", sans-serif;
     padding: 32px 16px 64px;
   }
   .page { max-width: 960px; margin: 0 auto; }
@@ -50,52 +47,70 @@
   }
   .note { font-size: 12.5px; opacity: 0.55; line-height: 1.7; margin-top: 8px; }
   code { background: rgba(255,255,255,.1); padding: 1px 6px; border-radius: 6px; font-size: 12px; }
+  pre {
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 14px 16px;
+    font-size: 12.5px;
+    line-height: 1.7;
+    overflow-x: auto;
+  }
 </style>
 </head>
 <body>
 <div class="page">
   <header>
-    <h1>JS Video Player 테스트</h1>
-    <p class="sub">오프닝/엔딩 스킵 · 재생바 구간 표시 · 키보드/더블탭 탐색 · 글래스모피즘 UI</p>
+    <h1>Hyfata Media Player</h1>
+    <p class="sub">Opening/ending skip &middot; segmented progress bar &middot; keyboard / double-tap seek &middot; glassmorphism UI</p>
   </header>
 
   <section class="card">
-    <h2>테스트 1 — 챕터명: Opening / Ending Credits</h2>
-    <p class="desc"><code>dummy1.mp4</code>(2분, 챕터 내장) + <code>sample-chapters.vtt</code>. 내장 챕터를 읽는 브라우저는 내장 챕터가, 아니면 VTT가 사용됩니다. 재생바에서 오프닝·엔딩 경계의 끊김 표시와 스킵 버튼을 확인하세요.</p>
+    <h2>Demo 1 — Chapters: Opening / Ending Credits (English UI)</h2>
+    <p class="desc"><code>dummy1.mp4</code> (2 min, embedded chapters) + <code>sample-chapters.vtt</code>. Browsers that read embedded chapters use those, otherwise the VTT file is used. Look for the breaks on the progress bar and the skip button.</p>
     <div id="player1"></div>
     <div class="legend">
-      <span>재생바의 끊김 표시 = 오프닝/엔딩 구간 경계 · 재생바에 마우스를 올리면 해당 구간 이름(오프닝/엔딩) 표시</span>
+      <span>Breaks on the progress bar = opening/ending boundaries &middot; hover the bar to see the segment name</span>
     </div>
   </section>
 
   <section class="card">
-    <h2>테스트 2 — 챕터명: Intro / Credits</h2>
-    <p class="desc"><code>dummy2.mp4</code>(1분 30초) + <code>sample-chapters2.vtt</code>. opening/ending 외에 intro/credits 명명도 인식되는지 확인합니다.</p>
+    <h2>Demo 2 — Chapters: Intro / Credits (Korean UI via <code>lang: 'ko'</code>)</h2>
+    <p class="desc"><code>dummy2.mp4</code> (1 min 30 s) + <code>sample-chapters2.vtt</code>. Same player with the Korean language pack, plus <code>intro</code>/<code>credits</code> title detection.</p>
     <div id="player2"></div>
   </section>
 
   <section class="card">
-    <h2>테스트 3 — 챕터 없음</h2>
-    <p class="desc"><code>dummy3.mp4</code>(1분), 챕터 미지정. 오프닝/엔딩이 없는 영상에서는 스킵 버튼과 구간 표시가 나타나지 않아야 합니다.</p>
+    <h2>Demo 3 — No chapters</h2>
+    <p class="desc"><code>dummy3.mp4</code> (1 min), no chapters. Videos without opening/ending segments show no skip button or bar breaks.</p>
     <div id="player3"></div>
   </section>
 
   <section class="card">
-    <h2>조작 방법</h2>
+    <h2>Language switching</h2>
+    <p class="desc">English is the default. Pass <code>lang</code> for a built-in pack, or override single strings with <code>labels</code>. See README for <code>VideoPlayer.addLang()</code>.</p>
+    <pre>new VideoPlayer('#player', { src: 'video.mp4', lang: 'ko' });
+
+new VideoPlayer('#player', {
+  src: 'video.mp4',
+  labels: { skipOpening: 'Skip intro' }
+});</pre>
+  </section>
+
+  <section class="card">
+    <h2>Controls</h2>
     <table class="keys">
-      <tr><td><kbd>Space</kbd> / <kbd>K</kbd></td><td>재생 · 일시정지</td></tr>
-      <tr><td><kbd>←</kbd> / <kbd>→</kbd></td><td>5초 뒤로 / 앞으로</td></tr>
-      <tr><td><kbd>J</kbd> / <kbd>L</kbd></td><td>10초 뒤로 / 앞으로</td></tr>
-      <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>볼륨 조절</td></tr>
-      <tr><td><kbd>M</kbd></td><td>음소거</td></tr>
-      <tr><td><kbd>F</kbd></td><td>전체화면</td></tr>
-      <tr><td><kbd>0</kbd>–<kbd>9</kbd></td><td>영상의 0%–90% 지점으로 이동</td></tr>
-      <tr><td>모바일</td><td>좌/우 더블탭: 10초 뒤로/앞으로 · 한 번 탭: 컨트롤 표시/숨김</td></tr>
+      <tr><td><kbd>Space</kbd> / <kbd>K</kbd></td><td>Play / pause</td></tr>
+      <tr><td><kbd>&larr;</kbd> / <kbd>&rarr;</kbd></td><td>Back / forward 5 s</td></tr>
+      <tr><td><kbd>J</kbd> / <kbd>L</kbd></td><td>Back / forward 10 s</td></tr>
+      <tr><td><kbd>&uarr;</kbd> / <kbd>&darr;</kbd></td><td>Volume</td></tr>
+      <tr><td><kbd>M</kbd></td><td>Mute</td></tr>
+      <tr><td><kbd>F</kbd></td><td>Fullscreen</td></tr>
+      <tr><td><kbd>0</kbd>&ndash;<kbd>9</kbd></td><td>Jump to 0%&ndash;90% of the video</td></tr>
+      <tr><td>Mobile</td><td>Double-tap left/right: &minus;10 s / +10 s &middot; single tap: show/hide controls</td></tr>
     </table>
     <p class="note">
-      키보드 조작은 플레이어를 한 번 클릭(포커스)한 후 동작합니다.
-      모바일 UI는 실제 기기에서 <code>http://(서버IP)/video_player_test/</code>로 접속하거나,
-      데스크톱 브라우저 개발자도구의 기기 툴바(터치 에뮬레이션)로 확인할 수 있습니다.
+      Keyboard controls work after clicking (focusing) the player once.
     </p>
   </section>
 </div>
@@ -109,7 +124,8 @@
 
   new VideoPlayer('#player2', {
     src: 'dummy2.mp4',
-    chaptersUrl: 'sample-chapters2.vtt'
+    chaptersUrl: 'sample-chapters2.vtt',
+    lang: 'ko'
   });
 
   new VideoPlayer('#player3', {
