@@ -277,7 +277,7 @@
   VideoPlayer.classifyChapter = classifyChapter;
   VideoPlayer.formatTime = formatTime;
   VideoPlayer.LANGS = LANGS;
-  VideoPlayer.VERSION = '1.0.1';
+  VideoPlayer.VERSION = '1.0.2';
   VideoPlayer.BRAND = 'Hyfata';
   VideoPlayer.NAME = 'Hyfata Media Player';
 
@@ -755,6 +755,12 @@
     this.chapters = cues.map(function (cue) {
       return { start: cue.start, end: cue.end, title: cue.title, type: classifyChapter(cue.title) };
     }).sort(function (a, b) { return a.start - b.start; });
+    // Multiple opening candidates (e.g. a "Prologue/OP" pair): only the last
+    // one is treated as the real opening; earlier ones are demoted to normal.
+    var openings = this.chapters.filter(function (c) { return c.type === 'opening'; });
+    if (openings.length > 1) {
+      openings.slice(0, openings.length - 1).forEach(function (c) { c.type = 'normal'; });
+    }
     this._renderSections();
     this._updateSkipButton();
   };

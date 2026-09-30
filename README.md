@@ -112,6 +112,9 @@ Chapter titles are classified automatically (case-insensitive, word match):
 - opening: `opening`, `intro`, `op`
 - ending: `ending`, `credits`, `ed`
 
+If multiple chapters classify as opening, only the last one is treated as the
+opening; earlier ones are ignored.
+
 WebVTT example:
 
 ```vtt

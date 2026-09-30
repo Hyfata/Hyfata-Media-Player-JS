@@ -106,6 +106,9 @@ new VideoPlayer('#player', { src: 'video.mp4', lang: 'ja' });
 - 오프닝: `opening`, `intro`, `op`
 - 엔딩: `ending`, `credits`, `ed`
 
+오프닝으로 분류되는 챕터가 여러 개면 마지막 것만 오프닝으로 취급하고, 앞의
+것들은 무시합니다.
+
 WebVTT 예시:
 
 ```vtt
