@@ -833,3 +833,97 @@
   .vp { border-radius: 12px; }
   .vp__time { font-size: 11.5px; margin: 0 4px; }
 }
+
+/* ============================================================
+   CSS fullscreen mode (opt-in: fullscreenMode: 'css')
+   For WebViews without a working element Fullscreen API
+   (e.g. iOS WKWebView): the player becomes a fixed overlay and
+   keeps its own UI. The --vp-sa* inset variables let hosts
+   substitute real safe-area values where env() is unreliable;
+   they default to env(). Only active while the class is set,
+   so these rules never apply outside CSS fullscreen mode.
+   ============================================================ */
+
+.vp-css-fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  /* No width/height: inset:0 must track the viewport so rotation
+     doesn't hit the 100vw/100dvh recalc timing bug in WKWebView */
+  max-width: none !important;
+  z-index: 9999 !important;
+  background: #000;
+  border-radius: 0 !important;
+  --vp-sat: env(safe-area-inset-top, 0px);
+  --vp-sar: env(safe-area-inset-right, 0px);
+  --vp-sab: env(safe-area-inset-bottom, 0px);
+  --vp-sal: env(safe-area-inset-left, 0px);
+}
+/* Same as .vp:fullscreen — without it the video sticks to the top
+   with a black void below */
+.vp-css-fullscreen .vp__video {
+  height: 100%;
+  object-fit: contain;
+}
+/* The base rules only handle top/bottom safe areas; in landscape the
+   notch moves to the side, so pad the controls horizontally too */
+.vp-css-fullscreen .vp__controls {
+  left: calc(10px + var(--vp-sal));
+  right: calc(10px + var(--vp-sar));
+}
+.vp-css-fullscreen.vp--touch.vp--compact .vp__controls {
+  left: calc(6px + var(--vp-sal));
+  right: calc(6px + var(--vp-sar));
+}
+.vp-css-fullscreen.vp--touch .vp__volume {
+  top: calc(10px + var(--vp-sat));
+  right: calc(68px + var(--vp-sar));
+}
+.vp-css-fullscreen.vp--touch .vp__btn--settings {
+  top: calc(10px + var(--vp-sat));
+  right: calc(10px + var(--vp-sar));
+}
+.vp-css-fullscreen.vp--touch.vp--compact .vp__volume {
+  top: calc(6px + var(--vp-sat));
+  right: calc(50px + var(--vp-sar));
+}
+.vp-css-fullscreen.vp--touch.vp--compact .vp__btn--settings {
+  top: calc(6px + var(--vp-sat));
+  right: calc(6px + var(--vp-sar));
+}
+/* Skip button: right offset differs per layout (desktop base / touch /
+   compact / idle) — keep in sync with the values above in this file */
+.vp-css-fullscreen .vp__skip-btn {
+  right: calc(12px + var(--vp-sar));
+}
+.vp-css-fullscreen.vp--touch .vp__skip-btn {
+  right: calc(56px + var(--vp-sar));
+}
+.vp-css-fullscreen.vp--touch.vp--idle .vp__skip-btn {
+  right: calc(10px + var(--vp-sar));
+}
+.vp-css-fullscreen.vp--touch.vp--compact .vp__skip-btn {
+  right: calc(44px + var(--vp-sar));
+}
+.vp-css-fullscreen.vp--touch.vp--compact.vp--idle .vp__skip-btn {
+  right: calc(8px + var(--vp-sar));
+}
+/* Bottom: re-declare the .vp--fullscreen lifts with the inset variables
+   so hosts can override them where env() gets stuck */
+.vp-css-fullscreen.vp--touch .vp__controls {
+  bottom: calc(16px + var(--vp-sab));
+}
+.vp-css-fullscreen.vp--touch .vp__skip-btn {
+  bottom: calc(52px + var(--vp-sab));
+}
+.vp-css-fullscreen.vp--touch.vp--idle .vp__skip-btn {
+  bottom: calc(16px + var(--vp-sab));
+}
+.vp-css-fullscreen.vp--touch.vp--compact .vp__controls {
+  bottom: calc(12px + var(--vp-sab));
+}
+.vp-css-fullscreen.vp--touch.vp--compact .vp__skip-btn {
+  bottom: calc(40px + var(--vp-sab));
+}
+.vp-css-fullscreen.vp--touch.vp--compact.vp--idle .vp__skip-btn {
+  bottom: calc(12px + var(--vp-sab));
+}

@@ -57,6 +57,8 @@
 | `keyboardSeek`       | number   | `5`          | 방향키 탐색 단위 (초)                             |
 | `hideDelay`          | number   | `2600`       | 오버레이 자동 숨김까지 시간 (ms)                  |
 | `skipButtonDuration` | number   | `4000`       | 재생 중 스킵 버튼 자동 숨김까지 시간 (ms)         |
+| `fullscreenMode`     | string   | `'auto'`     | `'auto'` = 네이티브 Fullscreen API, `'css'` = fixed 오버레이 모드 (iOS WKWebView처럼 요소 전체화면이 없는 WebView용, 플레이어 자체 UI 유지) |
+| `onFullscreenChange` | function | `null`       | 전체화면 상태 변경 콜백 `(isFullscreen, player)`. `vp:fullscreenchange` DOM 이벤트(버블링)로도 받을 수 있음 |
 
 ## 언어 팩
 

@@ -203,7 +203,13 @@
       seekStep: 10,
       keyboardSeek: 5,
       hideDelay: 2600,
-      skipButtonDuration: 4000
+      skipButtonDuration: 4000,
+      // 'auto' = native Fullscreen API. 'css' = fixed-position overlay mode for
+      // WebViews without a working element Fullscreen API (e.g. iOS WKWebView);
+      // the player keeps its own UI and toggles .vp-css-fullscreen instead.
+      fullscreenMode: 'auto',
+      // Called with (isFullscreen, player) on any fullscreen state change
+      onFullscreenChange: null
     }, options);
     var baseLabels = LANGS[this.options.lang] || LANGS.en;
     this.options.labels = Object.assign({}, baseLabels, options.labels || {});
@@ -236,6 +242,7 @@
     this._pendingSeek = null;
     this._ownLoad = false;
     this._kickSrc = null;
+    this._cssFs = false;
 
     // Restore saved settings (localStorage)
     this._rate = 1;
@@ -431,7 +438,7 @@
 
     var fsSupported = (document.fullscreenEnabled && container.requestFullscreen) ||
       container.webkitRequestFullscreen || video.webkitEnterFullscreen;
-    if (!fsSupported) this.refs.fsBtn.style.display = 'none';
+    if (!fsSupported && this.options.fullscreenMode !== 'css') this.refs.fsBtn.style.display = 'none';
 
     this.refs.volumeSlider.value = video.muted ? 0 : video.volume;
 
@@ -661,23 +668,21 @@
     /* Fullscreen state */
     function onFsChange() {
       var fs = !!(document.fullscreenElement || document.webkitFullscreenElement);
-      c.classList.toggle('vp--fullscreen', fs);
-      r.fsBtn.innerHTML = fs ? ICONS.fullscreenExit : ICONS.fullscreen;
-      r.fsBtn.setAttribute('aria-label', fs ? L.exitFullscreen : L.fullscreen);
-      // Mobile fullscreen: anything outside body doesn't render,
-      // so move the menu/backdrop inside the player
-      if (self.isTouch && r.backdrop) {
-        if (fs) { c.appendChild(r.menu); c.appendChild(r.backdrop); }
-        else { document.body.appendChild(r.menu); document.body.appendChild(r.backdrop); }
-      }
-      if (fs && self.isTouch && screen.orientation && screen.orientation.lock) {
-        screen.orientation.lock('landscape').catch(function () {});
-      } else if (!fs && screen.orientation && screen.orientation.unlock) {
-        try { screen.orientation.unlock(); } catch (e) {}
-      }
+      self._setFullscreenUi(fs);
     }
     this._on(document, 'fullscreenchange', onFsChange);
     this._on(document, 'webkitfullscreenchange', onFsChange);
+
+    // CSS fullscreen mode: no native fullscreenchange fires, so Escape and
+    // pagehide need explicit exit paths (native mode gets both from the OS)
+    if (this.options.fullscreenMode === 'css') {
+      this._on(document, 'keydown', function (e) {
+        if (e.key === 'Escape' && self._cssFs) self.toggleFullscreen();
+      });
+      this._on(window, 'pagehide', function () {
+        if (self._cssFs) self.toggleFullscreen();
+      });
+    }
 
     /* Progress bar (unified pointer: mouse/touch/pen) */
     this._on(r.progress, 'pointerdown', function (e) {
@@ -1379,8 +1384,46 @@
     v.volume = clamp(v.volume + delta, 0, 1);
   };
 
+  // Apply fullscreen UI state (button icon, menu/backdrop placement, orientation
+  // lock) for both native and CSS fullscreen. Also fires the vp:fullscreenchange
+  // event and the onFullscreenChange option so hosts can hook native-side work
+  // (status bar, etc.) without monkey-patching.
+  VideoPlayer.prototype._setFullscreenUi = function (fs) {
+    var c = this.container, r = this.refs, L = this.options.labels;
+    c.classList.toggle('vp--fullscreen', fs);
+    r.fsBtn.innerHTML = fs ? ICONS.fullscreenExit : ICONS.fullscreen;
+    r.fsBtn.setAttribute('aria-label', fs ? L.exitFullscreen : L.fullscreen);
+    // Mobile fullscreen: anything outside the player doesn't render,
+    // so move the menu/backdrop inside it
+    if (this.isTouch && r.backdrop) {
+      if (fs) { c.appendChild(r.menu); c.appendChild(r.backdrop); }
+      else { document.body.appendChild(r.menu); document.body.appendChild(r.backdrop); }
+    }
+    if (fs && this.isTouch && screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(function () {});
+    } else if (!fs && screen.orientation && screen.orientation.unlock) {
+      try { screen.orientation.unlock(); } catch (e) {}
+    }
+    try {
+      c.dispatchEvent(new CustomEvent('vp:fullscreenchange', {
+        bubbles: true,
+        detail: { fullscreen: fs, player: this }
+      }));
+    } catch (e) {}
+    if (typeof this.options.onFullscreenChange === 'function') {
+      try { this.options.onFullscreenChange(fs, this); } catch (e) {}
+    }
+  };
+
   VideoPlayer.prototype.toggleFullscreen = function () {
     var c = this.container;
+    if (this.options.fullscreenMode === 'css') {
+      this._cssFs = !this._cssFs;
+      c.classList.toggle('vp-css-fullscreen', this._cssFs);
+      this._setFullscreenUi(this._cssFs);
+      this._poke();
+      return;
+    }
     if (document.fullscreenElement || document.webkitFullscreenElement) {
       if (document.exitFullscreen) document.exitFullscreen();
       else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
@@ -1404,6 +1447,13 @@
     clearTimeout(this._skipTimer);
     clearTimeout(this._seekWatchdog);
     if (this._ro) this._ro.disconnect();
+    if (this._cssFs) {
+      this._cssFs = false;
+      this.container.classList.remove('vp-css-fullscreen');
+      if (screen.orientation && screen.orientation.unlock) {
+        try { screen.orientation.unlock(); } catch (e) {}
+      }
+    }
     // Remove the settings menu/backdrop moved to body on mobile
     [this.refs.menu, this.refs.backdrop].forEach(function (elm) {
       if (elm && elm.parentNode && elm.parentNode !== this.container) {

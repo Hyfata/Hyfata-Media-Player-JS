@@ -63,6 +63,8 @@ Open `index.html` for a live demo (English UI, Korean UI, and no-chapter cases).
 | `keyboardSeek`       | number   | `5`          | Arrow-key seek step (seconds)                                    |
 | `hideDelay`          | number   | `2600`       | ms until the overlay auto-hides                                  |
 | `skipButtonDuration` | number   | `4000`       | ms until the skip button auto-hides while playing                |
+| `fullscreenMode`     | string   | `'auto'`     | `'auto'` = native Fullscreen API, `'css'` = fixed-overlay mode (for WebViews without element fullscreen, e.g. iOS WKWebView; keeps the player's own UI) |
+| `onFullscreenChange` | function | `null`       | Fullscreen state callback `(isFullscreen, player)`. Also available as the bubbling `vp:fullscreenchange` DOM event |
 
 ## Language packs
 
